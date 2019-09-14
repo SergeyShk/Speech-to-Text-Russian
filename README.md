@@ -1,7 +1,7 @@
-# Speech-to-Text-Russian
+# Speech-to-Text (Russian)
 
 <p align="left">
-<img src="web/static/images/logo.jpg" width="800">
+<img src="https://www.analyticsindiamag.com/wp-content/uploads/2019/02/1_ChocH_eUxil5eaeXIsd3rw.png" width="800">
 </p>
 
 Проект для распознавания речи на русском языке на основе pykaldi.
