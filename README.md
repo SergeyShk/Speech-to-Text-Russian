@@ -1,6 +1,6 @@
 # Speech-to-Text (Russian)
 
-<p align="left">
+<p align="center">
 <img src="https://www.analyticsindiamag.com/wp-content/uploads/2019/02/1_ChocH_eUxil5eaeXIsd3rw.png" width="800">
 </p>
 
