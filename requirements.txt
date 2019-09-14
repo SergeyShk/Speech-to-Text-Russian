@@ -1,0 +1,9 @@
+pykaldi
+tqdm
+pandas
+matplotlib
+seaborn
+librosa
+sox
+pysubs2
+flask
