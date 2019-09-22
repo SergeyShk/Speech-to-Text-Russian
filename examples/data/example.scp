@@ -1,0 +1,2 @@
+example.0	sox data/example.wav -t wav - remix 1 |
+example.1	sox data/example.wav -t wav - remix 2 |
