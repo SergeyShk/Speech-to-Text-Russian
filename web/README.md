@@ -27,7 +27,7 @@
 Главная страница:
 
 <p align="center">
-<img src="static/images/screenshot_1.jpg" width="800">
+<img src="static/images/screenshot_1.jpg" width="500">
 </p>
 
 3. Выбрать WAV-файл, активировать нужные параметры и нажать "Загрузить". 
