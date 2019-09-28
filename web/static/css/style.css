@@ -1,0 +1,55 @@
+body {
+    font-family: "Segoe UI", "Segoe WP", "Open sans", Helvetica, Arial, sans-serif;
+    color: #7F8C9A;
+    background: #FCFDFD;    
+}
+h1 {
+    margin-bottom: 25px;
+    border-bottom: 2px solid #eee;
+    font-weight: normal;
+    text-align: center;
+}
+h3 {
+    font-size: 1.2em;
+}
+form {
+    width: 750px;
+    margin: 0 auto;
+ }
+
+.transcriptions, .file_info {
+    float: left;
+    width: 49%;
+    padding: 10px;
+}
+
+table.dataframe{
+    width: 90%;
+}
+table.dataframe, .dataframe th, .dataframe td {
+    border: none;
+    border-bottom: 1px solid #c8c8c8;
+    border-collapse: collapse;
+    text-align: left;
+    padding: 10px;
+    margin-bottom: 40px;
+}
+.dataframe th {
+    background-color: #eee;
+}
+.dataframe td{
+    font-size: 0.9em;
+}
+.dataframe td:nth-child(-n+3) {
+    width: 7%;
+}
+.dataframe tr:hover {
+    background-color: #ffff99;
+}
+
+.logo {
+    display: block;
+    width: 500px;
+    margin: 0 auto;
+    margin-bottom: 100px;
+}

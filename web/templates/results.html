@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title> 
+            Transcriptions Results
+        </title>
+        <script src="{{ url_for('static', filename='js/pace.js') }}"></script>
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='css/style.css') }}">
+    </head>
+    <body>
+        <h1 class="h1 text-primary">{{ filename }}</h1>
+        <div class="page">
+            <div class="transcriptions">
+                <p class="h2 text-info">Транскрибация</p>
+                {{ transcriptions|safe }}
+            </div>
+            <div class="file_info">
+                <p class="h2 text-info">Информация</p>
+                {% for property, value in info.items() %}
+                    <p><strong> {{ property }}: </strong> {{ value }}</p>
+                {% endfor %}
+                {% if waveform %}
+                    <p class="h2 text-info">Визуализация</p>
+                    <img src="data:image/png;base64, {{ waveform }} " />
+                {% endif %}
+            </div>
+        </div>
+    </body>
+</html>

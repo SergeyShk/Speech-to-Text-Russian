@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>
+            Reconocedor
+        </title>
+        <script src="{{ url_for('static', filename='js/jquery-3.4.1.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+        <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+        <link rel=stylesheet type=text/css href="{{ url_for('static', filename='css/style.css') }}">
+    </head>
+    <body>
+        <h1 class="h1 text-primary">Демо-стенд распознавания речи</h1>
+        <img class="logo" src="{{ url_for('static', filename='images/logo.jpg') }}" />
+        <form method="POST" action="/results" enctype="multipart/form-data">
+            <ul>
+                <li>Поддерживаемые форматы: .wav</li>
+                <li>Максимальный размер файла: 20 Мб</li>
+            </ul>
+            <div class="form-group">
+                <div class="input-group input-file" name="file">
+                    <span class="input-group-btn">
+                        <button class="btn btn-default btn-choose" type="button">Выбрать</button>
+                    </span>
+                    <input type="text" class="form-control" placeholder="Выберите аудио-файл..." />
+                    <span class="input-group-btn">
+                        <button class="btn btn-warning btn-reset" type="button">Сброс</button>
+                    </span>
+                </div>
+            </div>
+            <p class="h4 text-info">Параметры:</p>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="plotWaveform" checked />
+                <label class="form-check-label" for="plotWaveform">Визуализировать аудио</label>
+            </div>
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary btn-block">Загрузить</button>
+            </div>            
+            {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="alert alert-danger">
+                    {% for message in messages %}
+                        <strong>Внимание!</strong> {{ message }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% endwith %}
+        </form>
+    </body>
+</html>
