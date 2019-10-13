@@ -16,7 +16,8 @@ RUN pip install --upgrade pip \
 	librosa \
 	sox \
 	pysubs2 \
-	flask
+	flask \
+	soundfile
 
 # Копирование файлов проекта
 RUN mkdir speech_recognition	

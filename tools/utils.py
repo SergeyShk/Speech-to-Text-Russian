@@ -33,6 +33,35 @@ def delete_folder(folder):
     except Exception as e:
         print(e)
 
+def prepare_wav(wav):
+    """
+    Конвертация аудио файла
+
+    Аргументы:
+        wav: путь к .WAV файлу аудио
+
+    Результат:
+        wav: путь к конвертированному .WAV файлу аудио
+    """
+    parts = wav.split('.')
+    try:
+        wave.open(wav, 'r')
+    except:
+        old_wav = wav + ""
+        try:
+            wav_file, sr = librosa.load(wav, sr=None, mono=False)
+        except:
+            return wav
+        parts[-1] = "wav"
+        wav = '.'.join(parts)
+        try:
+            soundfile.write(wav, wav_file, sr, format='WAV')
+        except:
+            return old_wav
+        if old_wav != wav:
+            os.remove(old_wav)
+    return wav
+
 def make_wav_scp(wav, scp):
     """
     Формирование .SCP файла для аудио
