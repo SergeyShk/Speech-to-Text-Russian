@@ -31,6 +31,10 @@ https://kaldi-asr.org/doc/tutorial_setup.html
 
 `$ docker build -t speech_recognition:latest .`
 
+Или
+
+`$ docker pull docker.pkg.github.com/sergeyshk/speech-to-text-russian/stt-ru:0.1.0`
+
 2. Создать docker-том для работы с внешними данными:
 
 `$ docker volume create -d local -o o=bind -o device=[DIR] asr_volume`
