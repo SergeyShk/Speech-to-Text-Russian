@@ -9,7 +9,7 @@
 ## Установка
 ### Самостоятельная (Linux)
 
-1. Установить kaldi
+1. Установить kaldi:
 
 https://kaldi-asr.org/doc/tutorial_setup.html
 
@@ -17,11 +17,25 @@ https://kaldi-asr.org/doc/tutorial_setup.html
 
 `$ pip install -r requirements.txt`
 
-3. Добавить в PATH пути к компонентам kaldi:
+3. Установить pykaldi:
+
+* С помощью conda (с поддержкой GPU):
+
+`$ conda install -c pykaldi pykaldi`
+
+* С помощью conda (без поддержки GPU):
+
+`$ conda install -c pykaldi pykaldi-cpu`
+
+* Собрать из исходников (раздел From Source):
+
+https://github.com/pykaldi/pykaldi
+
+4. Добавить в PATH пути к компонентам kaldi:
 
 `$ PATH /kaldi/src/featbin:/kaldi/src/ivectorbin:/kaldi/src/online2bin:/kaldi/src/rnnlmbin:/kaldi/src/fstbin:$PATH`
 
-4. Склонировать репозиторий проекта:
+5. Склонировать репозиторий проекта:
 
 `$ git clone https://github.com/SergeyShk/Speech-to-Text-Russian.git`
 
