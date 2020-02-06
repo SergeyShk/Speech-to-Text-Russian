@@ -1,4 +1,3 @@
-pykaldi
 tqdm
 pandas
 matplotlib
