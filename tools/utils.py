@@ -55,7 +55,7 @@ def prepare_wav(wav):
         parts[-1] = "wav"
         wav = '.'.join(parts)
         try:
-            soundfile.write(wav, wav_file, sr, format='WAV')
+            soundfile.write(wav, wav_file.T, sr, format='WAV')
         except:
             return old_wav
         if old_wav != wav:
