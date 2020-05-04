@@ -39,6 +39,8 @@ https://github.com/pykaldi/pykaldi
 
 `$ git clone https://github.com/SergeyShk/Speech-to-Text-Russian.git`
 
+6. Отредактировать файл **model/conf/ivector_extractor.conf**, указав в нем корректные директории
+
 ### Docker
 
 1. Собрать docker-образ:
