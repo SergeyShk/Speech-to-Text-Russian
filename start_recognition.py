@@ -72,7 +72,13 @@ def start_pipeline(wav):
         return
     try:
         LOGGER.info("Запуск парсинга транскрибации для файла '{}'".format(wav_name))
-        pars = transcriptions_parser.TranscriptionsParser(str(OUTPUT_DIR / 'ass'), OUTPUT_DIR, LOGGER if IS_LOG else '', 1, 1, CSV)
+        pars = transcriptions_parser.TranscriptionsParser(
+            str(OUTPUT_DIR / 'ass'),
+            OUTPUT_DIR,
+            LOGGER.handlers[0].baseFilename if IS_LOG else '', 
+            1, 
+            1, 
+            CSV)
         pars.process_batch_files([ass])
         LOGGER.info("Завершение парсинга транскрибации для файла '{}'".format(wav_name))
     except:
