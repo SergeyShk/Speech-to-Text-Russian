@@ -7,7 +7,7 @@ ENV LC_ALL C.UTF-8
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN apt-get update
-RUN apt-get install -y llvm-8
+RUN apt-get install -y llvm-8 ffmpeg
 RUN LLVM_CONFIG=/usr/bin/llvm-config-8 pip3 install enum34 llvmlite numba
 
 # Установка необходимых python-библиотек
