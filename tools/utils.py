@@ -6,6 +6,8 @@ from pathlib import Path
 import pandas as pd
 import wave
 import pysubs2
+import librosa
+import soundfile
 
 def clear_folder(folder):
     """
