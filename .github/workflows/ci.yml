@@ -56,7 +56,34 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --no-default-groups --group test
       - name: Run tests
-        run: uv run --no-sync pytest --cov stt_ru
+        run: uv run --no-sync pytest -m "not network" --cov stt_ru
+
+  network:
+    name: network (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      HF_HOME: ${{ github.workspace }}/.hf
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - name: Cache models
+        uses: actions/cache@v6
+        with:
+          path: .hf
+          key: models-${{ runner.os }}-${{ hashFiles('src/stt_ru/asr/recognizer.py') }}
+      - name: Install dependencies
+        run: uv sync --locked --no-default-groups --group test
+      - name: Run the network tests
+        run: uv run --no-sync pytest -m network
 
   docs:
     runs-on: ubuntu-latest

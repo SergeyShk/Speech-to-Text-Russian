@@ -6,6 +6,9 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .pipeline import Transcriber
+from .result import Segment, Transcript
+
 try:
     __version__ = version("stt-ru")
 except PackageNotFoundError:
@@ -15,4 +18,4 @@ __description__ = """Распознавание русской речи: биб�
 __author__ = "Шкарин Сергей"
 __author_email__ = "kouki.sergey@gmail.com"
 
-__all__ = ["__version__"]
+__all__ = ["Segment", "Transcriber", "Transcript", "__version__"]
