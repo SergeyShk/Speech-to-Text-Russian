@@ -1,0 +1,22 @@
+name: Предложение
+description: Новая команда, параметр, формат вывода или поддержка модели
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает
+      description: Что вы хотите сделать с записями и почему текущих возможностей не хватает
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Как это могло бы выглядеть - команда, параметр, формат и пример результата
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Участие
+      options:
+        - label: Готов(а) сделать пул-реквест

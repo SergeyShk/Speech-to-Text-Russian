@@ -1,0 +1,66 @@
+site_name: stt-ru
+site_url: https://sergeyshk.github.io/Speech-to-Text-Russian/
+site_description: "Распознавание русской речи: библиотека Python, команда stt-ru, веб-сервис и Docker-образ"
+repo_url: https://github.com/SergeyShk/Speech-to-Text-Russian
+
+nav:
+    - Главная:
+      - О проекте: index.md
+      - Авторы: authors.md
+
+theme:
+  name: material
+  language: ru
+  palette:
+    primary: blue
+    accent: blue
+  font:
+    text: Source Sans Pro
+  features:
+    - navigation.tabs
+
+plugins:
+  - search:
+      lang:
+        - ru
+        - en
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: ru
+          name: Русский
+          default: true
+          build: true
+        - locale: en
+          name: English
+          build: true
+          site_description: "Russian speech recognition: Python library, command line tool, web service and Docker image"
+          nav_translations:
+            Главная: Home
+            О проекте: About
+            Авторы: Authors
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/SergeyShk
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/kouki91/
+
+extra_css:
+  - css/extra.css
+
+markdown_extensions:
+  - toc:
+      permalink: True
+  - attr_list
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg

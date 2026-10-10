@@ -1,0 +1,50 @@
+default_install_hook_types: [pre-commit, pre-push]
+exclude: ^(examples|model|tools|web)/|^(start_recognition\.py|motd|Dockerfile|requirements\.txt|\.gitattributes)$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.12.12
+    hooks:
+      - id: uv-lock
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: uv run ruff check --force-exclude --fix
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run ruff format --force-exclude
+        types_or: [python, pyi, markdown]
+        require_serial: true
+
+      - id: mypy
+        name: mypy
+        language: system
+        entry: uv run mypy
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest
+        stages: [pre-push]
+        language: system
+        entry: uv run pytest --cov stt_ru
+        pass_filenames: false
+        always_run: true
