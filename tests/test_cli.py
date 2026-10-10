@@ -420,6 +420,18 @@ def test_ascii_console(monkeypatch, fake, files):
     assert buffer.getvalue().startswith(b"????? 0: ????? a.")
 
 
+def test_exit_with_closed_stderr(monkeypatch, fake, files):
+    class Closed(io.StringIO):
+        def write(self, text):
+            raise BrokenPipeError
+
+        def flush(self):
+            raise BrokenPipeError
+
+    monkeypatch.setattr(sys, "stderr", Closed())
+    assert run(["transcribe", str(files)]) == 1
+
+
 def test_broken_pipe(monkeypatch, fake, files):
     class Closed(io.StringIO):
         def write(self, text):

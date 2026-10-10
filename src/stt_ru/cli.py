@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import io
 import os
 import re
@@ -154,7 +155,7 @@ def build_parser() -> ArgumentParser:
         "--delete-source",
         action="store_true",
         help="удалять файл после распознавания и записи результатов; нужен --output-dir "
-        "или --summary",
+        "или --summary; файлы, у которых результаты уже есть, не удаляются",
     )
     files.add_argument(
         "-j",
@@ -252,7 +253,8 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 def _exit(code: int) -> NoReturn:
     # Без ожидания потоков распознавания: файлы пишутся целиком или никак
-    sys.stderr.flush()
+    with contextlib.suppress(OSError, ValueError):
+        sys.stderr.flush()
     os._exit(code)
 
 

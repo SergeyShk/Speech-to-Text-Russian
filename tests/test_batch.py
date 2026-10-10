@@ -223,11 +223,16 @@ class TestBatch:
         assert transcriber.calls == [calls / "a.wav"]
         assert f"{calls / 'b.MP3'}: пропущен, результаты уже есть" in messages
 
-    def test_skipped_source_deleted(self, calls, tmp_path):
+    def test_skipped_source_kept(self, calls, tmp_path):
         touch(tmp_path / "out" / "a.txt")
-        batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], delete_source=True, **quiet())
+        messages = []
+        batch = Batch(
+            FakeTranscriber(), tmp_path / "out", ["txt"], delete_source=True,
+            **quiet(log=messages.append),
+        )  # fmt: skip
         assert batch.run(find_jobs([calls / "a.wav"])).skipped == [calls / "a.wav"]
-        assert not (calls / "a.wav").exists()
+        assert (calls / "a.wav").exists()
+        assert messages == [f"{calls / 'a.wav'}: пропущен, результаты уже есть, исходник оставлен"]
 
     def test_overwrite(self, calls, tmp_path):
         out = tmp_path / "out"
@@ -261,16 +266,17 @@ class TestBatch:
 
         monkeypatch.setattr(Path, "unlink", refuse)
         batch = Batch(
-            FakeTranscriber(),
-            tmp_path / "out",
-            ["txt"],
-            delete_source=True,
+            FakeTranscriber(), tmp_path / "out", ["txt"], delete_source=True,
             **quiet(errors=errors.append),
-        )
+        )  # fmt: skip
         report = batch.run(find_jobs([calls / "a.wav"]))
-        assert report.done == [calls / "a.wav"]
-        assert report.failed == {calls / "a.wav": "не удалось удалить исходник: занят"}
-        assert errors == [f"{calls / 'a.wav'}: не удалось удалить исходник - занят"]
+        assert report.done == []
+        assert report.failed == {
+            calls / "a.wav": "результаты сохранены, исходник не удален: занят"
+        }
+        assert errors == [f"{calls / 'a.wav'}: результаты сохранены, исходник не удален - занят"]
+        assert (tmp_path / "out" / "a.txt").exists()
+        assert summary_line(report) == "Готово: распознано 0 из 1, пропущено 0, с ошибкой 1"
 
     def test_failure_does_not_stop(self, calls, tmp_path):
         broken = touch(calls / "broken.wav")
@@ -474,6 +480,29 @@ class TestWatch:
         assert len(errors) == 2
         assert errors[0] == f"Файл или каталог не найден: {tmp_path / 'gone'}"
         assert "совпадают имена результатов" in errors[1]
+
+    def test_directory_disappears_twice(self, tmp_path):
+        folder = tmp_path / "in"
+        away = tmp_path / "away"
+        audio = touch(folder / "a.wav")
+        errors, messages = [], []
+        transcriber = FakeTranscriber()
+        batch = Batch(
+            transcriber,
+            tmp_path / "out",
+            ["txt"],
+            **quiet(log=messages.append, errors=errors.append),
+        )
+        moves = iter([(folder, away), (away, folder), (folder, away), (away, folder)])
+
+        def sleep(seconds):
+            source, target = next(moves)
+            source.rename(target)
+
+        watch(batch, [folder], min_age=0, rounds=5, sleep=sleep, clock=later)
+        assert transcriber.calls == [audio]
+        assert errors == [f"Файл или каталог не найден: {folder}"] * 2
+        assert not any("пропущен" in message for message in messages)
 
     def test_scan_error(self, tmp_path, monkeypatch):
         from stt_ru import batch as module

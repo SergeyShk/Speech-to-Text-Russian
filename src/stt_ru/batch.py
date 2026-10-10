@@ -203,7 +203,8 @@ class Batch:
     Описание:
         Для каждого файла по порядку: строки в общий файл, результаты в форматах
         (каждый целиком или никак), on_done, удаление исходника. Файл, у которого есть
-        все результаты, пропускается; при delete_source его исходник удаляется
+        все результаты, пропускается и не удаляется: это может быть другая запись
+        с тем же именем
 
     Аргументы:
         transcriber (Transcriber): Распознаватель
@@ -290,9 +291,8 @@ class Batch:
             outputs = self.outputs(job)
             if outputs and not self.overwrite and all(path.exists() for path in outputs):
                 report.skipped.append(job.source)
-                self.log(f"{job.source}: пропущен, результаты уже есть")
-                if self.delete_source:
-                    self._delete(job, report)
+                kept = ", исходник оставлен" if self.delete_source else ""
+                self.log(f"{job.source}: пропущен, результаты уже есть{kept}")
             else:
                 pending.append(job)
         executor = ThreadPoolExecutor(max_workers=self.workers)
@@ -335,13 +335,13 @@ class Batch:
             return
         if self.on_done is not None:
             self.on_done(job, transcript)
+        if self.delete_source and not self._delete(job, report):
+            return
         report.done.append(job.source)
         self.log(
             f"{prefix} {job.source}: фрагментов {len(transcript.segments)}, "
             f"{transcript.duration:.1f} с записи за {seconds:.1f} с"
         )
-        if self.delete_source:
-            self._delete(job, report)
 
     def _save(self, job: Job, transcript: Transcript) -> None:
         if self.summary is not None:
@@ -349,14 +349,14 @@ class Batch:
         for path, fmt in zip(self.outputs(job), self.formats, strict=True):
             write_atomic(path, dumps(transcript, fmt))
 
-    def _delete(self, job: Job, report: Report) -> None:
+    def _delete(self, job: Job, report: Report) -> bool:
         try:
-            job.source.unlink()
-        except FileNotFoundError:
-            pass
+            job.source.unlink(missing_ok=True)
         except OSError as error:
-            report.failed[job.source] = f"не удалось удалить исходник: {error}"
-            self.errors(f"{job.source}: не удалось удалить исходник - {error}")
+            report.failed[job.source] = f"результаты сохранены, исходник не удален: {error}"
+            self.errors(f"{job.source}: результаты сохранены, исходник не удален - {error}")
+            return False
+        return True
 
     def _append_summary(self, transcript: Transcript) -> None:
         assert self.summary is not None
@@ -390,7 +390,8 @@ def watch(
         Каталоги просматриваются каждые interval секунд; файл берется в работу, когда
         не менялся min_age секунд. Файл с ошибкой не повторяется, пока не изменится.
         Пропавший каталог и файлы с совпадающими именами результатов не останавливают
-        мониторинг: о них пишется сообщение в batch.errors
+        мониторинг: сообщение о них пишется в batch.errors, когда случай появляется.
+        Попытки файлов из недоступного каталога помнятся до его возвращения
 
     Аргументы:
         batch (Batch): Распознавание с записью результатов
@@ -411,25 +412,29 @@ def watch(
     check_watch(interval, min_age)
     total = WatchReport()
     attempts: dict[Path, tuple[float, int]] = {}
-    reported: set[str] = set()
-
-    def note(message: str) -> None:
-        if message not in reported:
-            reported.add(message)
-            batch.errors(message)
-
+    active: set[str] = set()
     count = 0
     while rounds is None or count < rounds:
         count += 1
         now = clock()
+        messages: list[str] = []
         try:
-            jobs = find_jobs(directories, recursive, strict=False, log=note)
+            jobs = find_jobs(directories, recursive, strict=False, log=messages.append)
         except OSError as error:
-            note(f"Не удалось просмотреть каталоги: {error}")
+            messages.append(f"Не удалось просмотреть каталоги: {error}")
             jobs = []
+        for message in messages:
+            if message not in active:
+                batch.errors(message)
+        active = set(messages)
+        roots = [Path(directory) for directory in directories if Path(directory).is_dir()]
         present = {job.source for job in jobs}
-        attempts = {path: signature for path, signature in attempts.items() if path in present}
-        total.failed = {path: text for path, text in total.failed.items() if path in present}
+        attempts = {
+            path: value for path, value in attempts.items() if not _gone(path, present, roots)
+        }
+        total.failed = {
+            path: text for path, text in total.failed.items() if not _gone(path, present, roots)
+        }
         ready = []
         for job in jobs:
             try:
@@ -450,6 +455,10 @@ def watch(
         if rounds is None or count < rounds:
             sleep(interval)
     return total
+
+
+def _gone(path: Path, present: set[Path], roots: Sequence[Path]) -> bool:
+    return path not in present and any(path.is_relative_to(root) for root in roots)
 
 
 def check_watch(interval: float, min_age: float) -> None:
