@@ -21,9 +21,13 @@ https://kaldi-asr.org/doc/tutorial_setup.html
 
 4. Установить pykaldi:
 
-* Из готового колеса для Python 3.11 со страницы релизов pykaldi 0.2.2:
+* Из готового колеса для Python 3.11 со страницы релизов pykaldi 0.2.2 (https://github.com/pykaldi/pykaldi/releases/tag/v0.2.2). Колеса выложены сжатыми в .gz, перед установкой их нужно распаковать:
 
-https://github.com/pykaldi/pykaldi/releases/tag/v0.2.2
+`$ curl -LO https://github.com/pykaldi/pykaldi/releases/download/v0.2.2/pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl.gz`
+
+`$ gunzip pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl.gz`
+
+`$ pip install pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl`
 
 * С помощью conda (с поддержкой GPU):
 

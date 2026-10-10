@@ -6,7 +6,7 @@ import sys
 import uuid
 import sox
 import pandas as pd
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 import librosa
 from librosa import display
 from time import time, gmtime, strftime
@@ -47,15 +47,14 @@ def plot_waveform(temp, wav, channels):
     if channels == 1:
         y = y.reshape(-1, len(y))
     DPI = 72
-    plt.figure(1, figsize=(16, 9), dpi=DPI) 
-    plt.subplots_adjust(wspace=0, hspace=0) 
-    for n in range(channels): 
-        plt.subplot(2, 1, n + 1, facecolor='0.22')
-        display.waveshow(y[n], sr=sr)
-        plt.grid(True, color='w') 
+    fig = Figure(figsize=(16, 9), dpi=DPI)
+    fig.subplots_adjust(wspace=0, hspace=0)
+    for n in range(channels):
+        ax = fig.add_subplot(2, 1, n + 1, facecolor='0.22')
+        display.waveshow(y[n], sr=sr, ax=ax)
+        ax.grid(True, color='w')
     waveform = str(Path(temp) / 'waveform.png')
-    plt.savefig(waveform, dpi=DPI)
-    plt.close()
+    fig.savefig(waveform, dpi=DPI)
     waveform = str(base64.b64encode(open(waveform, 'rb').read()))[2: -1]
     return waveform
 
@@ -77,20 +76,24 @@ def upload_file():
             flash('Файл должен иметь расширение .WAV')
             return redirect('/')
         display_name = Path(file.filename).stem
-        wav = str(app.config['UPLOAD_FOLDER'] / (uuid.uuid4().hex + '.wav'))
-        file.save(wav)
-        wav_info = sox.file_info.info(wav)
-        info = {}
-        info['Длительность аудио'] = str(round(wav_info['duration'], 2)) + ' с'
-        info['Число каналов'] = wav_info['channels']
-        info['Частота дискретизации'] = str(int(wav_info['sample_rate'])) + ' Гц'
-        start_time = time()
-        temp = str(app.config['UPLOAD_FOLDER'] / Path(wav).stem)
-        os.makedirs(temp, exist_ok=True)
-        transcriptions = recognize(temp, wav)
-        waveform = plot_waveform(temp, wav, wav_info['channels']) if request.form.get('plotWaveform') else None
-        delete_folder(temp)
-        os.remove(wav)
+        file_id = uuid.uuid4().hex
+        wav = str(app.config['UPLOAD_FOLDER'] / (file_id + '.wav'))
+        temp = str(app.config['UPLOAD_FOLDER'] / file_id)
+        try:
+            file.save(wav)
+            wav_info = sox.file_info.info(wav)
+            info = {}
+            info['Длительность аудио'] = str(round(wav_info['duration'], 2)) + ' с'
+            info['Число каналов'] = wav_info['channels']
+            info['Частота дискретизации'] = str(int(wav_info['sample_rate'])) + ' Гц'
+            start_time = time()
+            os.makedirs(temp, exist_ok=True)
+            transcriptions = recognize(temp, wav)
+            waveform = plot_waveform(temp, wav, wav_info['channels']) if request.form.get('plotWaveform') else None
+        finally:
+            delete_folder(temp)
+            if os.path.exists(wav):
+                os.remove(wav)
         info['Время выполнения'] = str(round(time() - start_time, 2)) + ' с'
         transcriptions = transcriptions[['Name', 'Start', 'End', 'Text']]
         transcriptions.columns = ['Канал', 'Начало', 'Конец', 'Текст']
