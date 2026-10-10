@@ -36,11 +36,15 @@ def test_explicit_neg_threshold():
         ({"min_speech_duration_ms": -1}, "min_speech_duration_ms не может быть отрицательным"),
         ({"min_silence_duration_ms": -1}, "min_silence_duration_ms не может быть отрицательным"),
         ({"speech_pad_ms": -1}, "speech_pad_ms не может быть отрицательным"),
-        ({"max_speech_duration_s": 0}, "должен быть больше двух speech_pad_ms"),
+        ({"max_speech_duration_s": 0}, "хотя бы на 1 с больше двух speech_pad_ms"),
         (
             {"max_speech_duration_s": 1, "speech_pad_ms": 500},
-            r"max_speech_duration_s \(1 с\) должен быть больше двух speech_pad_ms \(500 мс\)",
+            r"max_speech_duration_s \(1 с\) должен быть хотя бы на 1 с больше двух "
+            r"speech_pad_ms \(500 мс\)",
         ),
+        ({"max_speech_duration_s": 1, "speech_pad_ms": 499}, "хотя бы на 1 с больше"),
+        ({"max_speech_duration_s": 1.05, "speech_pad_ms": 500}, "хотя бы на 1 с больше"),
+        ({"max_speech_duration_s": 0.99, "speech_pad_ms": 0}, "хотя бы на 1 с больше"),
     ],
 )
 def test_wrong_values(options, message):
@@ -48,8 +52,9 @@ def test_wrong_values(options, message):
         VadOptions(**options)
 
 
-def test_pad_just_below_limit():
-    assert VadOptions(max_speech_duration_s=1, speech_pad_ms=499).speech_pad_ms == 499
+@pytest.mark.parametrize(("seconds", "pad"), [(2, 500), (1, 0)])
+def test_pad_at_limit(seconds, pad):
+    assert VadOptions(max_speech_duration_s=seconds, speech_pad_ms=pad).speech_pad_ms == pad
 
 
 def test_parameter_error_is_value_error():

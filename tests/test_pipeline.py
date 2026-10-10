@@ -105,6 +105,29 @@ def test_identical_channels(fake):
     assert {segment.channel for segment in transcript.segments} == {None}
 
 
+def test_nearly_identical_channels(fake):
+    rng = np.random.default_rng(0)
+    left = rng.normal(0, 0.1, 8000).astype(np.float32)
+    right = left + rng.normal(0, 0.001, 8000).astype(np.float32)
+    transcript = Transcriber().transcribe_audio(Audio(np.stack([left, right], 1), 8000))
+    assert transcript.channels == 1
+
+
+def test_different_channels_kept(fake):
+    rng = np.random.default_rng(0)
+    left = rng.normal(0, 0.1, 8000).astype(np.float32)
+    right = left + rng.normal(0, 0.01, 8000).astype(np.float32)
+    transcript = Transcriber().transcribe_audio(Audio(np.stack([left, right], 1), 8000))
+    assert transcript.channels == 2
+
+
+def test_tracks_are_views(fake):
+    samples = stereo()
+    transcriber = Transcriber()
+    tracks = transcriber._tracks(Audio(samples, 8000))
+    assert all(np.shares_memory(track, samples) for _, track in tracks)
+
+
 def test_duplicate_channel_among_others(fake):
     samples = np.concatenate([stereo(), stereo()[:, :1]], axis=1)
     transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
@@ -125,11 +148,11 @@ def test_windows(fake, monkeypatch):
     monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.25)
     rate = 8000
     samples = stereo(rate=rate, seconds=2.2)
-    samples[int(1.1 * rate) : int(1.2 * rate)] = 0
+    samples[int(1.0 * rate) : int(1.4 * rate)] = 0
     transcript = Transcriber().transcribe_audio(Audio(samples, rate))
     lengths = [[len(w) for w in waveforms] for waveforms, _ in fake[0].calls]
     cut = lengths[0][0]
-    assert int(1.1 * rate) <= cut < int(1.2 * rate)
+    assert int(1.0 * rate) <= cut < int(1.4 * rate)
     assert lengths == [[cut, cut], [len(samples) - cut, len(samples) - cut]]
     first = [s for s in transcript.segments if s.text == "Первый."]
     offset = cut / rate
@@ -144,31 +167,36 @@ class TestCutPoints:
     @pytest.fixture(autouse=True)
     def short_windows(self, monkeypatch):
         monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)
-        monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.25)
+        monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.5)
 
     def test_short(self):
-        assert cut_points([np.ones(10000, dtype=np.float32)], 8000) == [0, 10000]
+        assert cut_points([np.ones(12000, dtype=np.float32)], 8000) == [0, 12000]
 
-    def test_quietest_frame(self):
+    def test_pauses(self):
         track = np.ones(8000 * 4, dtype=np.float32)
-        track[8800:8960] = 0
-        track[17000:17160] = 0
+        track[7000:10200] = 0
+        track[15000:18200] = 0
         cuts = cut_points([track], 8000)
         assert cuts[0] == 0 and cuts[-1] == len(track)
-        assert 8800 <= cuts[1] < 8960
-        assert 17000 <= cuts[2] < 17160
+        assert 7000 <= cuts[1] < 10200
+        assert 15000 <= cuts[2] < 18200
 
-    def test_sum_of_channels(self):
-        left = np.ones(8000 * 2, dtype=np.float32)
-        right = np.ones(8000 * 2, dtype=np.float32)
-        left[7000:7160] = 0
-        right[9000:9160] = 0
-        right[7000:7160] = 0
-        assert 7000 <= cut_points([left, right], 8000)[1] < 7160
+    def test_pause_beats_short_gap_inside_phrase(self):
+        track = np.ones(8000 * 2, dtype=np.float32)
+        track[5000:5320] = 0
+        track[9000:11400] = 0.05
+        assert 9000 <= cut_points([track], 8000)[1] < 11400
+
+    def test_noisy_channel_does_not_outweigh(self):
+        speech = np.ones(8000 * 2, dtype=np.float32)
+        speech[9000:11400] = 0
+        noise = np.full(8000 * 2, 3, dtype=np.float32)
+        noise[5000:5320] = 0
+        assert 9000 <= cut_points([speech, noise], 8000)[1] < 11400
 
     def test_last_window_absorbs_tail(self):
-        assert cut_points([np.ones(8000 + 2000, dtype=np.float32)], 8000) == [0, 10000]
-        assert len(cut_points([np.ones(8000 + 2001, dtype=np.float32)], 8000)) == 3
+        assert cut_points([np.ones(8000 + 4000, dtype=np.float32)], 8000) == [0, 12000]
+        assert len(cut_points([np.ones(8000 + 4001, dtype=np.float32)], 8000)) == 3
 
 
 def test_transcribe_file(fake, tmp_path):

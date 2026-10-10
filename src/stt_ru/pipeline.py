@@ -17,6 +17,9 @@ RESAMPLE_RATE = 16000
 WINDOW_SECONDS = 600.0
 CUT_SEARCH_SECONDS = 5.0
 CUT_FRAME_SECONDS = 0.02
+CUT_QUIET_SECONDS = 0.3
+# Каналы с энергией разности ниже -30 дБ - одна запись, сохраненная в несколько каналов
+SAME_CHANNEL_RATIO = 1e-3
 
 Track = tuple[int | None, Samples]
 
@@ -27,10 +30,10 @@ class Transcriber:
 
     Описание:
         Каналы стереозаписи распознаются отдельно: в записях разговоров каждый канал - свой
-        говорящий; одинаковые каналы распознаются один раз как сведенная запись. Файл
-        с частотой, которую модель не принимает, передискретизируется в 16 кГц через ffmpeg
-        (см. load_audio). Записи длиннее 10 минут распознаются окнами около 10 минут,
-        граница окна - самое тихое место в пределах 5 с
+        говорящий; одинаковые каналы (энергия разности ниже -30 дБ) распознаются один раз
+        как сведенная запись. Файл с частотой, которую модель не принимает,
+        передискретизируется в 16 кГц через ffmpeg (см. load_audio). Записи длиннее 10 минут
+        распознаются окнами около 10 минут с границей в паузе (см. cut_points)
 
     Аргументы:
         model (str): Имя модели onnx-asr (см. Recognizer)
@@ -133,12 +136,42 @@ class Transcriber:
             return [(None, audio.mono())]
         tracks: list[Track] = []
         for index in range(audio.num_channels):
-            samples = audio.channel(index)
-            if not any(np.array_equal(samples, kept) for _, kept in tracks):
+            samples = audio.samples[:, index]
+            if not any(same_signal(samples, kept) for _, kept in tracks):
                 tracks.append((index, samples))
         if len(tracks) == 1:
             return [(None, tracks[0][1])]
         return tracks
+
+
+def same_signal(first: Samples, second: Samples, block: int = 1 << 20) -> bool:
+    """
+    Совпадение двух каналов
+
+    Аргументы:
+        first (numpy.ndarray): Отсчеты первого канала
+        second (numpy.ndarray): Отсчеты второго канала той же длины
+        block (int): Число отсчетов, которые сравниваются за раз
+
+    Вывод:
+        bool: Энергия разности не больше SAME_CHANNEL_RATIO от энергии громкого канала;
+            два тихих канала совпадают
+
+    Пример использования:
+        >>> import numpy as np
+        >>> from stt_ru.pipeline import same_signal
+        >>> signal = np.sin(np.arange(8000, dtype=np.float32))
+        >>> same_signal(signal, signal + 0.01), same_signal(signal, -signal)
+        (True, False)
+    """
+    difference = energy_first = energy_second = 0.0
+    for start in range(0, len(first), block):
+        a = first[start : start + block].astype(np.float64)
+        b = second[start : start + block].astype(np.float64)
+        difference += float(np.square(a - b).sum())
+        energy_first += float(np.dot(a, a))
+        energy_second += float(np.dot(b, b))
+    return difference <= SAME_CHANNEL_RATIO * max(energy_first, energy_second)
 
 
 def cut_points(tracks: Sequence[Samples], sample_rate: int) -> list[int]:
@@ -146,9 +179,11 @@ def cut_points(tracks: Sequence[Samples], sample_rate: int) -> list[int]:
     Границы окон распознавания
 
     Описание:
-        Окна идут через WINDOW_SECONDS; граница - самый тихий по сумме каналов отрезок
-        CUT_FRAME_SECONDS в пределах CUT_SEARCH_SECONDS от нее. Последнее окно может быть
-        длиннее на CUT_SEARCH_SECONDS
+        Окна идут через WINDOW_SECONDS. Граница ищется в пределах CUT_SEARCH_SECONDS
+        от нее: энергия каждого канала по кадрам CUT_FRAME_SECONDS делится на медиану
+        канала, чтобы шумный канал не перевешивал, суммируется и сглаживается
+        по CUT_QUIET_SECONDS; граница - середина самого тихого отрезка. Последнее окно
+        может быть длиннее на CUT_SEARCH_SECONDS
 
     Аргументы:
         tracks (list[numpy.ndarray]): Каналы одной длины
@@ -167,16 +202,17 @@ def cut_points(tracks: Sequence[Samples], sample_rate: int) -> list[int]:
     step = int(WINDOW_SECONDS * sample_rate)
     search = int(CUT_SEARCH_SECONDS * sample_rate)
     frame = max(int(CUT_FRAME_SECONDS * sample_rate), 1)
+    frames = max(2 * search // frame, 1)
+    width = min(max(round(CUT_QUIET_SECONDS / CUT_FRAME_SECONDS), 1), frames)
     cuts = [0]
     while total - cuts[-1] > step + search:
         low = cuts[-1] + step - search
-        frames = max(2 * search // frame, 1)
-        energy = sum(
-            np.square(track[low : low + frames * frame], dtype=np.float64)
-            .reshape(frames, frame)
-            .sum(axis=1)
-            for track in tracks
-        )
-        cuts.append(low + int(np.argmin(energy)) * frame + frame // 2)
+        energy = np.zeros(frames)
+        for track in tracks:
+            channel = np.square(track[low : low + frames * frame], dtype=np.float64)
+            channel = channel.reshape(frames, frame).sum(axis=1)
+            energy += channel / (np.median(channel) + 1e-12)
+        quiet = np.convolve(energy, np.ones(width), mode="valid")
+        cuts.append(low + (int(np.argmin(quiet)) + width // 2) * frame + frame // 2)
     cuts.append(total)
     return cuts

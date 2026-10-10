@@ -25,7 +25,7 @@ class VadOptions:
 
     Исключения:
         ParameterError: Если вероятность вне интервала от 0 до 1, neg_threshold больше threshold,
-            длительность отрицательна или max_speech_duration_s не больше двух speech_pad_ms
+            длительность отрицательна или max_speech_duration_s меньше двух speech_pad_ms плюс 1 с
 
     Пример использования:
         >>> from stt_ru.vad import VadOptions
@@ -52,10 +52,11 @@ class VadOptions:
         for name in ("min_speech_duration_ms", "min_silence_duration_ms", "speech_pad_ms"):
             if getattr(self, name) < 0:
                 raise ParameterError(f"{name} не может быть отрицательным: {getattr(self, name)}")
-        if self.max_speech_duration_s * 1000 <= 2 * self.speech_pad_ms:
+        # onnx-asr режет длинные фрагменты шагом max_speech_duration_s - 2 * speech_pad_ms
+        if self.max_speech_duration_s - 2 * self.speech_pad_ms / 1000 < 1:
             raise ParameterError(
-                f"max_speech_duration_s ({self.max_speech_duration_s} с) должен быть больше "
-                f"двух speech_pad_ms ({self.speech_pad_ms} мс)"
+                f"max_speech_duration_s ({self.max_speech_duration_s} с) должен быть хотя бы "
+                f"на 1 с больше двух speech_pad_ms ({self.speech_pad_ms} мс)"
             )
 
     def as_kwargs(self) -> OnnxVadOptions:
