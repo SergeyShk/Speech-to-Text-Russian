@@ -9,6 +9,7 @@ import soundfile as sf
 import stt_ru
 from stt_ru import Segment, Transcriber, pipeline
 from stt_ru.audio import Audio
+from stt_ru.pipeline import cut_points
 from stt_ru.vad import VadOptions
 
 CALL = Path(__file__).parent / "data" / "call.wav"
@@ -37,8 +38,8 @@ def fake(monkeypatch):
     return FakeRecognizer.instances
 
 
-def stereo(rate=8000):
-    samples = np.zeros((rate, 2), dtype=np.float32)
+def stereo(rate=8000, seconds=1.0):
+    samples = np.zeros((int(rate * seconds), 2), dtype=np.float32)
     samples[:, 0] = 0.25
     samples[:, 1] = 0.75
     return samples
@@ -95,10 +96,79 @@ def test_mono(fake):
     assert transcript.segments[0] == Segment(0.2, 0.8, "Первый.")
 
 
+def test_identical_channels(fake):
+    samples = np.repeat(stereo()[:, :1], 2, axis=1)
+    transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+    ((waveforms, _),) = fake[0].calls
+    assert len(waveforms) == 1
+    assert transcript.channels == 1
+    assert {segment.channel for segment in transcript.segments} == {None}
+
+
+def test_duplicate_channel_among_others(fake):
+    samples = np.concatenate([stereo(), stereo()[:, :1]], axis=1)
+    transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+    ((waveforms, _),) = fake[0].calls
+    assert [float(w[0]) for w in waveforms] == [0.25, 0.75]
+    assert transcript.channels == 2
+    assert {segment.channel for segment in transcript.segments} == {0, 1}
+
+
 def test_empty_audio(fake):
     transcript = Transcriber().transcribe_audio(Audio(np.zeros((0, 2), dtype=np.float32), 8000))
     assert fake[0].calls == []
-    assert (transcript.segments, transcript.channels) == ((), 2)
+    assert transcript.segments == ()
+
+
+def test_windows(fake, monkeypatch):
+    monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)
+    monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.25)
+    rate = 8000
+    samples = stereo(rate=rate, seconds=2.2)
+    samples[int(1.1 * rate) : int(1.2 * rate)] = 0
+    transcript = Transcriber().transcribe_audio(Audio(samples, rate))
+    lengths = [[len(w) for w in waveforms] for waveforms, _ in fake[0].calls]
+    cut = lengths[0][0]
+    assert int(1.1 * rate) <= cut < int(1.2 * rate)
+    assert lengths == [[cut, cut], [len(samples) - cut, len(samples) - cut]]
+    first = [s for s in transcript.segments if s.text == "Первый."]
+    offset = cut / rate
+    assert [(s.start, s.end) for s in first] == [
+        (0.2, 0.8),
+        (round(offset + 0.2, 3), round(offset + 0.8, 3)),
+    ]
+    assert transcript.duration == 2.2
+
+
+class TestCutPoints:
+    @pytest.fixture(autouse=True)
+    def short_windows(self, monkeypatch):
+        monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)
+        monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.25)
+
+    def test_short(self):
+        assert cut_points([np.ones(10000, dtype=np.float32)], 8000) == [0, 10000]
+
+    def test_quietest_frame(self):
+        track = np.ones(8000 * 4, dtype=np.float32)
+        track[8800:8960] = 0
+        track[17000:17160] = 0
+        cuts = cut_points([track], 8000)
+        assert cuts[0] == 0 and cuts[-1] == len(track)
+        assert 8800 <= cuts[1] < 8960
+        assert 17000 <= cuts[2] < 17160
+
+    def test_sum_of_channels(self):
+        left = np.ones(8000 * 2, dtype=np.float32)
+        right = np.ones(8000 * 2, dtype=np.float32)
+        left[7000:7160] = 0
+        right[9000:9160] = 0
+        right[7000:7160] = 0
+        assert 7000 <= cut_points([left, right], 8000)[1] < 7160
+
+    def test_last_window_absorbs_tail(self):
+        assert cut_points([np.ones(8000 + 2000, dtype=np.float32)], 8000) == [0, 10000]
+        assert len(cut_points([np.ones(8000 + 2001, dtype=np.float32)], 8000)) == 3
 
 
 def test_transcribe_file(fake, tmp_path):
@@ -109,12 +179,37 @@ def test_transcribe_file(fake, tmp_path):
     assert fake[0].calls[0][1] == 8000
 
 
-def test_resample_unsupported_rate(fake, tmp_path):
+def test_resample_unsupported_rate_once(fake, tmp_path, monkeypatch):
     path = tmp_path / "call.wav"
     sf.write(path, stereo(rate=12000), 12000, subtype="PCM_16")
+    loads = []
+    load = pipeline.load_audio
+
+    def spy(*args, **kwargs):
+        loads.append(kwargs["sample_rate"])
+        return load(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "load_audio", spy)
+    transcript = Transcriber(ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()).transcribe(path)
+    assert loads == [16000]
+    assert fake[0].calls[0][1] == 16000
+    assert transcript.duration == pytest.approx(1.0, abs=0.01)
+
+
+def test_resample_after_ffmpeg_decode(fake, tmp_path, monkeypatch):
+    path = tmp_path / "call.wav"
+    sf.write(path, stereo(rate=12000), 12000, subtype="PCM_16")
+    monkeypatch.setattr(
+        pipeline.sf, "info", lambda path: (_ for _ in ()).throw(sf.LibsndfileError(1))
+    )
     transcript = Transcriber(ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()).transcribe(path)
     assert fake[0].calls[0][1] == 16000
     assert transcript.duration == pytest.approx(1.0, abs=0.01)
+
+
+def test_missing_file(fake, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        Transcriber().transcribe(tmp_path / "missing.wav")
 
 
 def test_package_exports():
@@ -135,3 +230,13 @@ def test_real_model():
     starts = [s.start for s in transcript.segments]
     assert starts == sorted(starts)
     assert all(0 <= s.start < s.end <= transcript.duration for s in transcript.segments)
+
+
+@pytest.mark.network
+def test_real_model_windows(monkeypatch):
+    monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 9.0)
+    monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 1.0)
+    transcript = Transcriber().transcribe(CALL)
+    operator = " ".join(s.text for s in transcript.segments if s.channel == 1).lower()
+    assert "благодарю вас за ожидание" in operator
+    assert "до свидания" in operator
