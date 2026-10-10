@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev4"
+version = "0.3.0.dev5"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +43,9 @@ dependencies = [
 
 [project.optional-dependencies]
 ffmpeg = ["imageio-ffmpeg>=0.6"]
+
+[project.scripts]
+stt-ru = "stt_ru.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/SergeyShk/Speech-to-Text-Russian"

@@ -37,6 +37,11 @@ def test_version_fallback(monkeypatch):
     assert stt_ru.__version__ != "0.0.0"
 
 
+def test_entry_point():
+    (point,) = importlib.metadata.entry_points(group="console_scripts", name="stt-ru")
+    assert point.value == "stt_ru.cli:main"
+
+
 def test_package_data():
     assert (Path(stt_ru.__file__).parent / "py.typed").is_file()
 
