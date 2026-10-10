@@ -45,6 +45,6 @@ repos:
         name: pytest
         stages: [pre-push]
         language: system
-        entry: uv run pytest --cov stt_ru
+        entry: uv run pytest -m "not network" --cov stt_ru
         pass_filenames: false
         always_run: true

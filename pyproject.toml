@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev2"
+version = "0.3.0.dev3"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,6 +37,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.26",
+    "onnx-asr[cpu,hub]>=0.12,<0.13",
     "soundfile>=0.12.1",
 ]
 
@@ -151,6 +152,9 @@ warn_unused_ignores = true
 addopts = "-v --strict-markers --strict-config --doctest-modules"
 testpaths = ["tests", "src/stt_ru"]
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
+markers = [
+    "network: тест скачивает модель из сети; отключается через -m 'not network'",
+]
 
 [tool.coverage.run]
 source = ["stt_ru"]
