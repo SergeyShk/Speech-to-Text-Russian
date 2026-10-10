@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev1"
+version = "0.3.0.dev2"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,7 +35,13 @@ classifiers = [
     "Typing :: Typed",
     "Natural Language :: Russian",
 ]
-dependencies = []
+dependencies = [
+    "numpy>=1.26",
+    "soundfile>=0.12.1",
+]
+
+[project.optional-dependencies]
+ffmpeg = ["imageio-ffmpeg>=0.5"]
 
 [project.urls]
 Homepage = "https://github.com/SergeyShk/Speech-to-Text-Russian"
@@ -60,7 +66,7 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [dependency-groups]
-test = ["pytest>=8.3", "pytest-cov>=6.0"]
+test = ["imageio-ffmpeg>=0.5", "pytest>=8.3", "pytest-cov>=6.0"]
 lint = ["mypy>=1.14", "pre-commit>=4.0", "ruff>=0.9"]
 docs = [
     "mkdocs>=1.6",
