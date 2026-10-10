@@ -1,5 +1,6 @@
 from .formats import (
     FORMATS,
+    dumps,
     render,
     save,
     to_ass,
@@ -13,6 +14,7 @@ from .formats import (
 
 __all__ = [
     "FORMATS",
+    "dumps",
     "render",
     "save",
     "to_ass",

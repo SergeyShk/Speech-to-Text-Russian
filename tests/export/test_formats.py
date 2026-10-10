@@ -1,7 +1,9 @@
 import csv
 import io
 import json
+import subprocess
 
+import imageio_ffmpeg
 import pysubs2
 import pytest
 
@@ -9,6 +11,7 @@ from stt_ru import Segment, Transcript
 from stt_ru.exceptions import ParameterError
 from stt_ru.export import (
     FORMATS,
+    dumps,
     render,
     save,
     to_ass,
@@ -179,13 +182,36 @@ class TestVtt:
     def test_text(self, stereo):
         assert to_vtt(stereo) == (
             "WEBVTT\n\n"
-            "00:00:00.994 --> 00:00:09.054\n<v Канал 1>Наталья, благодарю вас за ожидание.\n\n"
-            "00:00:03.490 --> 00:00:03.934\n<v Канал 0>Угу\n\n"
+            "00:00:00.994 --> 00:00:09.054\n"
+            "<v Канал 1>Канал 1: Наталья, благодарю вас за ожидание.\n\n"
+            "00:00:03.490 --> 00:00:03.934\n<v Канал 0>Канал 0: Угу\n\n"
         )
 
     def test_parses(self, stereo):
         events = pysubs2.SSAFile.from_string(to_vtt(stereo), format_="vtt").events
-        assert [(e.start, e.end) for e in events] == [(994, 9054), (3490, 3934)]
+        assert [(e.start, e.end, e.plaintext) for e in events] == [
+            (994, 9054, "Канал 1: Наталья, благодарю вас за ожидание."),
+            (3490, 3934, "Канал 0: Угу"),
+        ]
+
+    def test_ffmpeg_shows_speaker(self, stereo, tmp_path):
+        path = save(stereo, tmp_path / "call.vtt")
+        command = [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-f",
+            "srt",
+            "-",
+        ]
+        output = subprocess.run(command, capture_output=True, check=True).stdout.decode("utf-8")
+        assert "Канал 1: Наталья, благодарю вас за ожидание." in output
+        assert "Канал 0: Угу" in output
+
+    def test_mixed(self, mixed):
+        assert to_vtt(mixed).splitlines()[3] == "Алло."
 
     def test_escape(self):
         transcript = Transcript((Segment(0.0, 1.0, "a < b & c > d"),), 1.0, 1, "m")
@@ -261,8 +287,18 @@ class TestRenderAndSave:
         assert path == tmp_path / f"call.{fmt}"
         data = path.read_bytes()
         assert b"\r" not in data
-        expected = render(stereo, fmt).encode()
-        assert data == (b"\xef\xbb\xbf" + expected if fmt == "csv" else expected)
+        assert data == dumps(stereo, fmt)
+        assert data.startswith(b"\xef\xbb\xbf") == (fmt == "csv")
+
+    @pytest.mark.parametrize("fmt", FORMATS)
+    def test_dumps(self, stereo, fmt):
+        content = dumps(stereo, fmt)
+        expected = render(stereo, fmt).encode("utf-8")
+        assert content == (b"\xef\xbb\xbf" + expected if fmt == "csv" else expected)
+
+    def test_dumps_unknown_format(self, stereo):
+        with pytest.raises(ParameterError, match="Формат pdf не поддерживается"):
+            dumps(stereo, "pdf")
 
     def test_save_explicit_format(self, stereo, tmp_path):
         path = save(stereo, tmp_path / "call.out", "srt")

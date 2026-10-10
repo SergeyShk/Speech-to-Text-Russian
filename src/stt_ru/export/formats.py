@@ -173,7 +173,8 @@ def to_vtt(transcript: Transcript) -> str:
         transcript (Transcript): Результат распознавания
 
     Вывод:
-        str: Субтитры; говорящий каналов записи - в теге голоса <v>
+        str: Субтитры; говорящий каналов записи - в теге голоса <v> и перед текстом:
+            плееры и ffmpeg показывают только текст
 
     Пример использования:
         >>> from stt_ru import Segment, Transcript
@@ -182,7 +183,7 @@ def to_vtt(transcript: Transcript) -> str:
         WEBVTT
         <BLANKLINE>
         00:00:00.994 --> 00:00:09.054
-        <v Канал 1>Алло.
+        <v Канал 1>Канал 1: Алло.
         <BLANKLINE>
         <BLANKLINE>
     """
@@ -190,7 +191,7 @@ def to_vtt(transcript: Transcript) -> str:
     for segment in transcript.segments:
         text = _vtt_escape(segment.text)
         if segment.speaker:
-            text = f"<v {segment.speaker}>{text}"
+            text = f"<v {segment.speaker}>{segment.speaker}: {text}"
         cues.append(f"{_clock(segment.start, '.')} --> {_clock(segment.end, '.')}\n{text}\n\n")
     return "WEBVTT\n\n" + "".join(cues)
 
@@ -331,13 +332,41 @@ def render(transcript: Transcript, fmt: str) -> str:
     return _RENDERERS[_check_format(fmt)](transcript)
 
 
+def dumps(transcript: Transcript, fmt: str) -> bytes:
+    """
+    Содержимое файла с результатом распознавания
+
+    Описание:
+        UTF-8 с переводами строк \\n; CSV - с BOM, чтобы Excel открывал кириллицу
+
+    Аргументы:
+        transcript (Transcript): Результат распознавания
+        fmt (str): Формат из FORMATS
+
+    Вывод:
+        bytes: Содержимое файла
+
+    Исключения:
+        ParameterError: Если формат не поддерживается
+
+    Пример использования:
+        >>> from stt_ru import Segment, Transcript
+        >>> from stt_ru.export import dumps
+        >>> transcript = Transcript((Segment(0.78, 7.0, "Алло.", 1),), 10.0, 2, "m", "call.wav")
+        >>> dumps(transcript, "csv")[:13]
+        b'\\xef\\xbb\\xbfAudio File'
+    """
+    name = _check_format(fmt)
+    content = render(transcript, name).encode("utf-8")
+    return b"\xef\xbb\xbf" + content if name == "csv" else content
+
+
 def save(transcript: Transcript, path: str | os.PathLike[str], fmt: str | None = None) -> Path:
     """
     Сохранение результата распознавания в файл
 
     Описание:
-        Файл пишется в UTF-8 с переводами строк \\n; CSV - с BOM, чтобы Excel
-        открывал кириллицу
+        Содержимое - как у dumps: UTF-8 с переводами строк \\n, CSV - с BOM
 
     Аргументы:
         transcript (Transcript): Результат распознавания
@@ -353,7 +382,5 @@ def save(transcript: Transcript, path: str | os.PathLike[str], fmt: str | None =
     target = Path(path)
     if fmt is None and not target.suffix:
         raise ParameterError(f"У файла {target.name} нет расширения: укажите формат в fmt")
-    name = _check_format(fmt if fmt is not None else target.suffix)
-    encoding = "utf-8-sig" if name == "csv" else "utf-8"
-    target.write_text(render(transcript, name), encoding=encoding, newline="")
+    target.write_bytes(dumps(transcript, fmt if fmt is not None else target.suffix))
     return target
