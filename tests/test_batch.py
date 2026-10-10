@@ -38,6 +38,11 @@ class FakeTranscriber:
         return Transcript((segment,), 1.0, 2, "fake", path.name)
 
 
+def later():
+    # Время изменения файла на NTFS бывает на миллисекунды позже time.time()
+    return time.time() + 60
+
+
 def touch(path, data=b"audio"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -434,7 +439,9 @@ class TestWatch:
         transcriber = FakeTranscriber()
         batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet())
         changes = iter([lambda: None, lambda: broken.write_bytes(b"new audio")])
-        report = watch(batch, [folder], min_age=0, rounds=3, sleep=lambda s: next(changes)())
+        report = watch(
+            batch, [folder], min_age=0, rounds=3, sleep=lambda s: next(changes)(), clock=later
+        )
         assert transcriber.calls == [broken, broken]
         assert list(report.failed) == [broken]
 
@@ -442,7 +449,9 @@ class TestWatch:
         folder = tmp_path / "in"
         broken = touch(folder / "broken.wav")
         batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], **quiet())
-        report = watch(batch, [folder], min_age=0, rounds=2, sleep=lambda s: broken.unlink())
+        report = watch(
+            batch, [folder], min_age=0, rounds=2, sleep=lambda s: broken.unlink(), clock=later
+        )
         assert report.failed == {}
 
     def test_missing_directory_and_conflicts(self, tmp_path):
@@ -453,7 +462,12 @@ class TestWatch:
         transcriber = FakeTranscriber()
         batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet(errors=errors.append))
         report = watch(
-            batch, [folder, tmp_path / "gone"], min_age=0, rounds=3, sleep=lambda s: None
+            batch,
+            [folder, tmp_path / "gone"],
+            min_age=0,
+            rounds=3,
+            sleep=lambda s: None,
+            clock=later,
         )
         assert transcriber.calls == [folder / "call.mp3"]
         assert report.done == 1
@@ -490,7 +504,9 @@ class TestWatch:
         folder.mkdir()
         batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], delete_source=True, **quiet())
         arrivals = iter([lambda: touch(folder / "a.wav"), lambda: touch(folder / "b.wav")])
-        report = watch(batch, [folder], min_age=0, rounds=3, sleep=lambda s: next(arrivals)())
+        report = watch(
+            batch, [folder], min_age=0, rounds=3, sleep=lambda s: next(arrivals)(), clock=later
+        )
         assert report.done == 2
         assert list(folder.iterdir()) == []
 
