@@ -13,6 +13,9 @@ from ..exceptions import AudioError
 
 Samples = npt.NDArray[np.float32]
 
+# SF_COUNT_MAX: libsndfile не знает длину записи
+_UNKNOWN_FRAMES = 2**63 - 1
+
 
 @dataclass(frozen=True, eq=False)
 class Audio:
@@ -144,7 +147,10 @@ def load_audio(
 
     Описание:
         WAV, FLAC, OGG и MP3 читает библиотека soundfile. Остальные форматы, в том числе
-        звуковая дорожка видео, и смена частоты дискретизации требуют ffmpeg (см. find_ffmpeg)
+        звуковая дорожка видео, смена частоты дискретизации и файлы без длины записи
+        в заголовке требуют ffmpeg (см. find_ffmpeg). MP3 и файлы с нулевой длиной
+        в заголовке декодирует ffmpeg, если он найден: soundfile читает их только
+        до длины из заголовка
 
     Аргументы:
         path (str): Путь к файлу
@@ -156,7 +162,8 @@ def load_audio(
 
     Исключения:
         FileNotFoundError: Если файла нет
-        AudioError: Если файл не читается или для него нужен ffmpeg, а ffmpeg не найден
+        AudioError: Если частота дискретизации не положительна, файл не читается
+            или для него нужен ffmpeg, а ffmpeg не найден
 
     Пример использования:
         >>> from stt_ru.audio import load_audio
@@ -164,19 +171,33 @@ def load_audio(
         >>> audio.num_channels, audio.sample_rate, audio.duration
         (2, 8000, 2.0)
     """
+    if sample_rate is not None and sample_rate <= 0:
+        raise AudioError(f"Частота дискретизации должна быть положительной: {sample_rate}")
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"Файл не найден: {source}")
     try:
-        samples, rate = sf.read(source, dtype="float32", always_2d=True)
+        with sf.SoundFile(source) as file:
+            reason = _ffmpeg_reason(file, sample_rate, ffmpeg)
+            if reason is None:
+                samples: Samples = file.read(dtype="float32", always_2d=True)
+                return Audio(samples, file.samplerate)
     except sf.LibsndfileError as error:
         reason = f"формат не читается библиотекой soundfile ({error})"
-        samples, rate = _decode(source, sample_rate, _require_ffmpeg(ffmpeg, reason))
-    else:
-        if sample_rate is not None and rate != sample_rate:
-            reason = f"нужна смена частоты дискретизации с {rate} на {sample_rate} Гц"
-            samples, rate = _decode(source, sample_rate, _require_ffmpeg(ffmpeg, reason))
-    return Audio(samples, rate)
+    decoded, rate = _decode(source, sample_rate, _require_ffmpeg(ffmpeg, reason))
+    return Audio(decoded, rate)
+
+
+def _ffmpeg_reason(
+    file: sf.SoundFile, sample_rate: int | None, ffmpeg: str | os.PathLike[str] | None
+) -> str | None:
+    if file.frames >= _UNKNOWN_FRAMES:
+        return "длина записи не указана в заголовке"
+    if sample_rate is not None and file.samplerate != sample_rate:
+        return f"нужна смена частоты дискретизации с {file.samplerate} на {sample_rate} Гц"
+    if (file.format == "MP3" or file.frames == 0) and find_ffmpeg(ffmpeg) is not None:
+        return "длина записи в заголовке ненадежна"
+    return None
 
 
 def _require_ffmpeg(ffmpeg: str | os.PathLike[str] | None, reason: str) -> str:
@@ -194,7 +215,8 @@ def _decode(path: Path, sample_rate: int | None, ffmpeg: str) -> tuple[Samples, 
         output = Path(directory) / "audio.wav"
         # Префикс file: не дает ffmpeg принять имя файла за протокол вроде concat: или http:
         command = [ffmpeg, "-nostdin", "-v", "error", "-i", f"file:{path.resolve()}", "-vn"]
-        command += ["-c:a", "pcm_f32le"]
+        # RF64 нужен записям длиннее 4 ГиБ: обычный WAV ffmpeg молча обрезает
+        command += ["-c:a", "pcm_f32le", "-rf64", "auto"]
         if sample_rate is not None:
             command += ["-ar", str(sample_rate)]
         command.append(str(output))

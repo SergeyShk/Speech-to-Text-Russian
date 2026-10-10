@@ -46,6 +46,36 @@ def m4a(tmp_path):
 
 
 @pytest.fixture
+def pipe_flac(tmp_path):
+    path = tmp_path / "pipe.flac"
+    command = [
+        FFMPEG,
+        "-nostdin",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=2",
+    ]
+    command += ["-ar", "16000", "-f", "flac", "pipe:1"]
+    path.write_bytes(subprocess.run(command, capture_output=True, check=True).stdout)
+    return path
+
+
+@pytest.fixture
+def zero_sizes_wav(tmp_path):
+    path = tmp_path / "zero.wav"
+    sf.write(path, stereo(), 8000, subtype="PCM_16")
+    data = bytearray(path.read_bytes())
+    data[4:8] = bytes(4)
+    chunk = data.index(b"data")
+    data[chunk + 4 : chunk + 8] = bytes(4)
+    path.write_bytes(bytes(data))
+    return path
+
+
+@pytest.fixture
 def no_ffmpeg(monkeypatch):
     monkeypatch.setattr(loader, "find_ffmpeg", lambda ffmpeg=None: None)
 
@@ -176,6 +206,64 @@ class TestLoadAudio:
     def test_ffmpeg_not_runnable(self, m4a, tmp_path):
         with pytest.raises(AudioError, match="Не удалось запустить ffmpeg"):
             load_audio(m4a, ffmpeg=tmp_path / "ffmpeg")
+
+    @pytest.mark.parametrize("rate", [0, -16000])
+    def test_wrong_sample_rate(self, wav, rate):
+        with pytest.raises(AudioError, match="положительной"):
+            load_audio(wav, sample_rate=rate, ffmpeg=FFMPEG)
+
+    def test_unknown_length(self, pipe_flac):
+        assert sf.info(pipe_flac).frames == loader._UNKNOWN_FRAMES
+        audio = load_audio(pipe_flac, ffmpeg=FFMPEG)
+        assert (audio.num_channels, audio.sample_rate, audio.duration) == (1, 16000, 2.0)
+
+    def test_unknown_length_without_ffmpeg(self, pipe_flac, no_ffmpeg):
+        with pytest.raises(AudioError, match="длина записи не указана в заголовке"):
+            load_audio(pipe_flac)
+
+    @pytest.mark.skipif("MP3" not in sf.available_formats(), reason="libsndfile без MP3")
+    def test_concatenated_mp3(self, tmp_path):
+        parts = []
+        for seconds in (1.0, 3.0):
+            part = tmp_path / f"part{seconds}.mp3"
+            sf.write(part, stereo(rate=16000, seconds=seconds), 16000, format="MP3")
+            parts.append(part.read_bytes())
+        path = tmp_path / "concat.mp3"
+        path.write_bytes(b"".join(parts))
+        assert sf.info(path).duration < 2
+        assert load_audio(path, ffmpeg=FFMPEG).duration == pytest.approx(4.0, abs=0.2)
+
+    def test_zero_sizes_in_header(self, zero_sizes_wav):
+        assert sf.info(zero_sizes_wav).frames == 0
+        audio = load_audio(zero_sizes_wav, ffmpeg=FFMPEG)
+        assert audio.duration == pytest.approx(1.0, abs=0.01)
+        assert np.allclose(audio.samples, stereo(), atol=1e-4)
+
+    def test_zero_sizes_without_ffmpeg(self, zero_sizes_wav, no_ffmpeg):
+        assert load_audio(zero_sizes_wav).duration == 0.0
+
+    def test_resample_skips_soundfile_read(self, wav, monkeypatch):
+        read = sf.SoundFile.read
+
+        def guarded(self, *args, **kwargs):
+            assert self.name != str(wav), "soundfile не должен читать исходный файл"
+            return read(self, *args, **kwargs)
+
+        monkeypatch.setattr(sf.SoundFile, "read", guarded)
+        assert load_audio(wav, sample_rate=16000, ffmpeg=FFMPEG).sample_rate == 16000
+
+    def test_ffmpeg_writes_rf64(self, wav, monkeypatch):
+        commands = []
+        run = subprocess.run
+
+        def record(command, **kwargs):
+            commands.append(command)
+            return run(command, **kwargs)
+
+        monkeypatch.setattr(loader.subprocess, "run", record)
+        load_audio(wav, sample_rate=16000, ffmpeg=FFMPEG)
+        (command,) = commands
+        assert command[command.index("-rf64") + 1] == "auto"
 
     def test_protocol_like_name(self, tmp_path):
         path = tmp_path / "concat:call.wav"

@@ -1488,7 +1488,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "imageio-ffmpeg", marker = "extra == 'ffmpeg'", specifier = ">=0.5" },
+    { name = "imageio-ffmpeg", marker = "extra == 'ffmpeg'", specifier = ">=0.6" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "soundfile", specifier = ">=0.12.1" },
 ]
@@ -1496,7 +1496,7 @@ provides-extras = ["ffmpeg"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "imageio-ffmpeg", specifier = ">=0.5" },
+    { name = "imageio-ffmpeg", specifier = ">=0.6" },
     { name = "mkdocs", specifier = ">=1.6" },
     { name = "mkdocs-material", specifier = ">=9.5" },
     { name = "mkdocs-static-i18n", specifier = ">=1.2" },
@@ -1519,7 +1519,7 @@ lint = [
     { name = "ruff", specifier = ">=0.9" },
 ]
 test = [
-    { name = "imageio-ffmpeg", specifier = ">=0.5" },
+    { name = "imageio-ffmpeg", specifier = ">=0.6" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cov", specifier = ">=6.0" },
 ]

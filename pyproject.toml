@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ffmpeg = ["imageio-ffmpeg>=0.5"]
+ffmpeg = ["imageio-ffmpeg>=0.6"]
 
 [project.urls]
 Homepage = "https://github.com/SergeyShk/Speech-to-Text-Russian"
@@ -66,7 +66,7 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [dependency-groups]
-test = ["imageio-ffmpeg>=0.5", "pytest>=8.3", "pytest-cov>=6.0"]
+test = ["imageio-ffmpeg>=0.6", "pytest>=8.3", "pytest-cov>=6.0"]
 lint = ["mypy>=1.14", "pre-commit>=4.0", "ruff>=0.9"]
 docs = [
     "mkdocs>=1.6",
