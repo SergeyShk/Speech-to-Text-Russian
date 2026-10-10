@@ -18,6 +18,7 @@ WINDOW_SECONDS = 600.0
 CUT_SEARCH_SECONDS = 5.0
 CUT_FRAME_SECONDS = 0.02
 CUT_QUIET_SECONDS = 0.3
+CUT_FLOOR_DB = 40.0
 # Каналы с энергией разности ниже -30 дБ - одна запись, сохраненная в несколько каналов
 SAME_CHANNEL_RATIO = 1e-3
 
@@ -180,10 +181,12 @@ def cut_points(tracks: Sequence[Samples], sample_rate: int) -> list[int]:
 
     Описание:
         Окна идут через WINDOW_SECONDS. Граница ищется в пределах CUT_SEARCH_SECONDS
-        от нее: энергия каждого канала по кадрам CUT_FRAME_SECONDS делится на медиану
-        канала, чтобы шумный канал не перевешивал, суммируется и сглаживается
-        по CUT_QUIET_SECONDS; граница - середина самого тихого отрезка. Последнее окно
-        может быть длиннее на CUT_SEARCH_SECONDS
+        от нее. Энергия каждого канала по кадрам CUT_FRAME_SECONDS берется в децибелах
+        относительно громких кадров канала (95-й процентиль) и ограничивается
+        от -CUT_FLOOR_DB до 0: постоянный шум и цифровая тишина с редкими всплесками
+        не перевешивают паузу в речи другого канала. Уровни каналов суммируются
+        и сглаживаются по CUT_QUIET_SECONDS; граница - середина самого тихого отрезка.
+        Последнее окно может быть длиннее на CUT_SEARCH_SECONDS
 
     Аргументы:
         tracks (list[numpy.ndarray]): Каналы одной длины
@@ -211,7 +214,9 @@ def cut_points(tracks: Sequence[Samples], sample_rate: int) -> list[int]:
         for track in tracks:
             channel = np.square(track[low : low + frames * frame], dtype=np.float64)
             channel = channel.reshape(frames, frame).sum(axis=1)
-            energy += channel / (np.median(channel) + 1e-12)
+            loud = np.percentile(channel, 95)
+            level = 10 * np.log10((channel + 1e-20) / (loud + 1e-20))
+            energy += np.clip(level, -CUT_FLOOR_DB, 0)
         quiet = np.convolve(energy, np.ones(width), mode="valid")
         cuts.append(low + (int(np.argmin(quiet)) + width // 2) * frame + frame // 2)
     cuts.append(total)

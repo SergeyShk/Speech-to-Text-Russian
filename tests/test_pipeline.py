@@ -194,6 +194,15 @@ class TestCutPoints:
         noise[5000:5320] = 0
         assert 9000 <= cut_points([speech, noise], 8000)[1] < 11400
 
+    def test_digital_silence_channel_does_not_outweigh(self):
+        speech = np.ones(8000 * 2, dtype=np.float32)
+        speech[9000:11400] = 0
+        clicks = np.zeros(8000 * 2, dtype=np.float32)
+        for start in range(0, len(clicks), 800):
+            if not 5000 <= start < 7400:
+                clicks[start : start + 160] = 0.001
+        assert 9000 <= cut_points([speech, clicks], 8000)[1] < 11400
+
     def test_last_window_absorbs_tail(self):
         assert cut_points([np.ones(8000 + 4000, dtype=np.float32)], 8000) == [0, 12000]
         assert len(cut_points([np.ones(8000 + 4001, dtype=np.float32)], 8000)) == 3
