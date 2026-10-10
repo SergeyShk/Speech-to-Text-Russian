@@ -1,19 +1,33 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+dist/
+build/
+target/
+
+# Окружения
 .venv/
 venv/
+.env
 
-# Jupyter
+# Инструменты
+.coverage
+coverage.xml
+.mypy_cache
+.pytest_cache
+.ruff_cache
 .ipynb_checkpoints/
 
-# Окружение
-.env
+# Документация
+site/
 
 # Временные файлы веб-демо и распознавания
 web/data/
 lat.gz
 *.log
 
-# macOS
+# Редакторы и ОС
+.vscode
+.idea
 .DS_Store

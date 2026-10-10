@@ -1,0 +1,41 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "*"
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: false
+          python-version: "3.13"
+      - name: Check version matches tag
+        run: |
+          version="$(uv version --short)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Версия в pyproject.toml ($version) не совпадает с тегом ($GITHUB_REF_NAME)"
+            exit 1
+          fi
+      - name: Build distribution
+        run: uv build
+      - name: Check distribution
+        run: |
+          uv tool run twine check dist/*
+          ls -l dist
+      - name: Publish distribution (test)
+        if: github.event_name == 'push'
+        run: uv publish --index testpypi --trusted-publishing always
+      - name: Publish distribution
+        if: github.event_name == 'release'
+        run: uv publish --trusted-publishing always

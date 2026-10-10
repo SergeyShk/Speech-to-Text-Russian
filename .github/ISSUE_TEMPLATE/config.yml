@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Документация
+    url: https://sergeyshk.github.io/Speech-to-Text-Russian/
+    about: Установка, распознавание, форматы вывода и выбор модели

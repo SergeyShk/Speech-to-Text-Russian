@@ -1,0 +1,39 @@
+name: Ошибка
+description: Неверный результат распознавания, исключение или падение
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Что происходит
+      description: Что вы ожидали и что получили
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести
+      description: Команда или код, параметры аудио (формат, длительность, частота дискретизации, число каналов) и полный traceback, если он есть. По возможности приложите короткий фрагмент записи, на котором проявляется ошибка
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия stt-ru
+      description: "`python -c \"import stt_ru; print(stt_ru.__version__)\"`"
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Модель
+      description: Если распознавание шло не моделью по умолчанию
+      placeholder: "gigaam-v3-e2e-rnnt"
+  - type: input
+    id: environment
+    attributes:
+      label: Python и ОС
+      placeholder: "Python 3.12, Ubuntu 24.04"
+    validations:
+      required: true
