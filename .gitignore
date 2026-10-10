@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Окружение
+.env
+
+# Временные файлы веб-демо и распознавания
+web/data/
+lat.gz
+*.log
+
+# macOS
+.DS_Store

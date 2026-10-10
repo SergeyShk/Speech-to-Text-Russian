@@ -1,7 +1,9 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 import os
 import base64
+import secrets
 import sys
+import uuid
 import sox
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,10 +18,11 @@ from tools import data_preparator, segmenter, recognizer, transcriptions_parser
 from tools.utils import make_ass, make_wav_scp, delete_folder
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = '8dgn89vdf8vff8v9df99f'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 app.config['ALLOWED_EXTENSIONS'] = ['wav']
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = Path('data')
+app.config['UPLOAD_FOLDER'].mkdir(parents=True, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -47,11 +50,12 @@ def plot_waveform(temp, wav, channels):
     plt.figure(1, figsize=(16, 9), dpi=DPI) 
     plt.subplots_adjust(wspace=0, hspace=0) 
     for n in range(channels): 
-        plt.subplot(2, 1, n + 1, facecolor='200')
-        display.waveplot(y[n], sr)
+        plt.subplot(2, 1, n + 1, facecolor='0.22')
+        display.waveshow(y[n], sr=sr)
         plt.grid(True, color='w') 
     waveform = str(Path(temp) / 'waveform.png')
     plt.savefig(waveform, dpi=DPI)
+    plt.close()
     waveform = str(base64.b64encode(open(waveform, 'rb').read()))[2: -1]
     return waveform
 
@@ -72,8 +76,8 @@ def upload_file():
         if not allowed_file(file.filename):
             flash('Файл должен иметь расширение .WAV')
             return redirect('/')
-        filename = file.filename.replace(' ', '_')
-        wav = str(app.config['UPLOAD_FOLDER'] / filename)
+        display_name = Path(file.filename).stem
+        wav = str(app.config['UPLOAD_FOLDER'] / (uuid.uuid4().hex + '.wav'))
         file.save(wav)
         wav_info = sox.file_info.info(wav)
         info = {}
@@ -90,9 +94,9 @@ def upload_file():
         info['Время выполнения'] = str(round(time() - start_time, 2)) + ' с'
         transcriptions = transcriptions[['Name', 'Start', 'End', 'Text']]
         transcriptions.columns = ['Канал', 'Начало', 'Конец', 'Текст']
-        with pd.option_context('display.max_colwidth', -1):
+        with pd.option_context('display.max_colwidth', None):
             transcriptions_html = transcriptions.to_html(index=False, justify='center', escape=False)        
-        return render_template('results.html', filename='.'.join(filename.split('.')[:-1]), 
+        return render_template('results.html', filename=display_name, 
                                 info=info, waveform=waveform, transcriptions=transcriptions_html)
     return render_template('index.html')
 
