@@ -1,4 +1,6 @@
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -64,3 +66,18 @@ class Transcript:
     def text(self) -> str:
         """Текст всех фрагментов по времени начала через пробел"""
         return " ".join(segment.text for segment in self.segments)
+
+    def save(self, path: str | os.PathLike[str], fmt: str | None = None) -> Path:
+        """
+        Сохранение в файл (см. stt_ru.export.save)
+
+        Аргументы:
+            path (str): Путь к файлу
+            fmt (str): Формат: txt, json, jsonl, srt, vtt, ass, csv; None - по расширению файла
+
+        Вывод:
+            Path: Путь к файлу
+        """
+        from .export import save
+
+        return save(self, path, fmt)
