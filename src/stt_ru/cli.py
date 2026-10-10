@@ -1,5 +1,6 @@
 import argparse
 import io
+import os
 import re
 import sys
 from collections.abc import Callable, Iterable, Sequence
@@ -11,7 +12,18 @@ import onnxruntime as rt
 
 from . import __version__
 from .asr import DEFAULT_MODEL, DEFAULT_QUANTIZATION
-from .batch import Batch, Job, Log, find_jobs, log_to_stderr, summary_line, watch
+from .batch import (
+    Batch,
+    Job,
+    Log,
+    check_options,
+    check_watch,
+    find_jobs,
+    ignore,
+    log_to_stderr,
+    summary_line,
+    watch,
+)
 from .exceptions import ModelError, ParameterError
 from .export import FORMATS, render, to_csv
 from .pipeline import Transcriber
@@ -42,6 +54,10 @@ ARGPARSE_ERRORS = (
     (re.compile(r"argument (\S+): invalid (\w+) value: (.*)"), "аргумент {0}: неверное число {2}"),
     (re.compile(r"argument (\S+): expected one argument"), "аргумент {0}: нужно значение"),
     (re.compile(r"the following arguments are required: (.*)"), "нужны аргументы: {0}"),
+    (
+        re.compile(r"ambiguous option: (\S+) could match (.*)"),
+        "неоднозначный параметр {0}: подходят {1}",
+    ),
 )
 
 
@@ -122,7 +138,8 @@ def build_parser() -> ArgumentParser:
     output.add_argument(
         "--summary",
         metavar="ФАЙЛ",
-        help="общий файл CSV или JSONL с фрагментами всех файлов; дописывается, если есть",
+        help="общий файл CSV или JSONL с фрагментами файлов, распознанных в этом запуске; "
+        "дописывается, если есть",
     )
     output.add_argument(
         "--overwrite",
@@ -134,7 +151,10 @@ def build_parser() -> ArgumentParser:
         "-r", "--recursive", action="store_true", help="искать файлы и во вложенных каталогах"
     )
     files.add_argument(
-        "--delete-source", action="store_true", help="удалять файл после распознавания"
+        "--delete-source",
+        action="store_true",
+        help="удалять файл после распознавания и записи результатов; нужен --output-dir "
+        "или --summary",
     )
     files.add_argument(
         "-j",
@@ -193,7 +213,9 @@ def build_parser() -> ArgumentParser:
     vad.add_argument("--max-speech-s", type=float, metavar="С", help="наибольший фрагмент")
     vad.add_argument("--min-silence-ms", type=float, metavar="МС", help="наименьшая пауза")
     vad.add_argument("--speech-pad-ms", type=float, metavar="МС", help="запас по краям")
-    output.add_argument("-q", "--quiet", action="store_true", help="не выводить ход работы")
+    output.add_argument(
+        "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
+    )
     return parser
 
 
@@ -202,12 +224,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     Запуск команды stt-ru
 
     Описание:
-        Коды выхода: 0 - успех, 1 - ошибка распознавания или загрузки модели,
-        2 - неверные аргументы, 130 - прерывание (Ctrl+C)
+        Коды выхода: 0 - успех, 1 - ошибка распознавания, загрузки модели или закрытый
+        вывод, 2 - неверные аргументы, 130 - прерывание (Ctrl+C). Вывод в файл
+        или конвейер идет в UTF-8
 
     Аргументы:
         argv (list[str]): Аргументы командной строки; None - sys.argv
     """
+    if isinstance(sys.stdout, io.TextIOWrapper) and not sys.stdout.isatty():
+        sys.stdout.reconfigure(encoding="utf-8")
     # Справка и ошибки по-русски не должны падать на консоли с однобайтной кодировкой
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
@@ -220,7 +245,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         transcribe(parser.commands[args.command], args)
     except KeyboardInterrupt:
-        sys.exit(INTERRUPTED)
+        _exit(INTERRUPTED)
+    except BrokenPipeError:
+        _exit(1)
+
+
+def _exit(code: int) -> NoReturn:
+    # Без ожидания потоков распознавания: файлы пишутся целиком или никак
+    sys.stderr.flush()
+    os._exit(code)
 
 
 def _vad_options(args: argparse.Namespace) -> VadOptions:
@@ -245,72 +278,83 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
     """
     Команда transcribe
 
+    Описание:
+        Аргументы и файлы проверяются до загрузки модели; без файлов модель не загружается
+
     Аргументы:
         parser (ArgumentParser): Разбор аргументов для сообщений об ошибках
         args (argparse.Namespace): Разобранные аргументы
     """
     default = "txt,srt,json" if args.output_dir else "txt"
     formats = [fmt.strip().lower() for fmt in (args.formats or default).split(",") if fmt.strip()]
-    if args.output_dir is None:
-        if len(formats) != 1:
-            parser.error("без --output-dir печатается один формат")
-        if args.watch:
-            parser.error("для --watch нужен --output-dir")
-    quantization = None if args.quantization.lower() == "none" else args.quantization
-    log: Log = (lambda message: None) if args.quiet else log_to_stderr
+    log: Log = ignore if args.quiet else log_to_stderr
     try:
+        check_options(formats, args.summary, args.workers)
+        if args.watch:
+            check_watch(args.interval, args.min_age)
         vad = _vad_options(args)
+        if args.output_dir is None:
+            if len(formats) != 1:
+                parser.error("без --output-dir печатается один формат")
+            if args.watch:
+                parser.error("для --watch нужен --output-dir")
+            if args.delete_source and args.summary is None:
+                parser.error("для --delete-source нужен --output-dir или --summary")
+        if args.watch and not all(Path(path).is_dir() for path in args.paths):
+            parser.error("--watch следит только за каталогами")
         jobs = find_jobs(args.paths, args.recursive)
         if args.output_dir is None and len(jobs) > 1 and formats[0] not in STREAM_FORMATS:
             parser.error(
                 f"формат {formats[0]} печатается только для одного файла: "
                 "для нескольких укажите --output-dir"
             )
-        if args.watch and not all(Path(path).is_dir() for path in args.paths):
-            parser.error("--watch следит только за каталогами")
-        batch_formats = formats if args.output_dir else []
         providers = _providers(parser, args.device)
-        log(f"Загрузка модели {args.model}...")
+    except (FileNotFoundError, ParameterError) as error:
+        parser.error(str(error))
+    if not jobs and not args.watch:
+        log("Файлов для распознавания нет")
+        return
+    log(f"Загрузка модели {args.model}...")
+    try:
         transcriber = Transcriber(
             args.model,
-            quantization=quantization,
+            quantization=None if args.quantization.lower() == "none" else args.quantization,
             model_dir=args.model_dir,
             providers=providers,
             vad=vad,
             split_channels=not args.mono,
             ffmpeg=args.ffmpeg,
         )
-        batch = Batch(
-            transcriber,
-            args.output_dir,
-            batch_formats,
-            summary=args.summary,
-            overwrite=args.overwrite,
-            delete_source=args.delete_source,
-            workers=args.workers,
-            log=log,
-            on_done=None if args.output_dir else _printer(formats[0], several=len(jobs) > 1),
-        )
-        if args.watch:
-            log("Мониторинг каталогов, Ctrl+C - выход")
-            report = watch(
+    except ModelError as error:
+        print(f"stt-ru: ошибка: {error}", file=sys.stderr)
+        sys.exit(1)
+    batch = Batch(
+        transcriber,
+        args.output_dir,
+        formats,
+        summary=args.summary,
+        overwrite=args.overwrite,
+        delete_source=args.delete_source,
+        workers=args.workers,
+        log=log,
+        on_done=None if args.output_dir else _printer(formats[0], several=len(jobs) > 1),
+    )
+    if args.watch:
+        log("Мониторинг каталогов, Ctrl+C - выход")
+        failed = bool(
+            watch(
                 batch,
                 args.paths,
                 recursive=args.recursive,
                 interval=args.interval,
                 min_age=args.min_age,
-            )
-            failed = bool(report.failed)
-        else:
-            report = batch.run(jobs)
-            if args.output_dir or len(jobs) > 1:
-                log(summary_line(report))
-            failed = bool(report.failed)
-    except (FileNotFoundError, ParameterError) as error:
-        parser.error(str(error))
-    except ModelError as error:
-        print(f"stt-ru: ошибка: {error}", file=sys.stderr)
-        sys.exit(1)
+            ).failed
+        )
+    else:
+        report = batch.run(jobs)
+        if args.output_dir or len(jobs) > 1:
+            log(summary_line(report))
+        failed = bool(report.failed)
     if failed:
         sys.exit(1)
 

@@ -10,7 +10,7 @@ import pytest
 
 import stt_ru
 from stt_ru import Segment, Transcript, cli
-from stt_ru.batch import Report
+from stt_ru.batch import WatchReport
 from stt_ru.cli import main
 from stt_ru.exceptions import AudioError, ModelError
 from stt_ru.vad import VadOptions
@@ -41,6 +41,16 @@ def fake(monkeypatch):
     FakeTranscriber.instances.clear()
     monkeypatch.setattr(cli, "Transcriber", FakeTranscriber)
     return FakeTranscriber.instances
+
+
+@pytest.fixture(autouse=True)
+def exits(monkeypatch):
+    """os._exit завершил бы и pytest: заменяется на SystemExit"""
+
+    def fake_exit(code):
+        raise SystemExit(code)
+
+    monkeypatch.setattr(cli.os, "_exit", fake_exit)
 
 
 @pytest.fixture
@@ -88,6 +98,40 @@ class TestPrint:
     def test_quiet(self, fake, files, capsys):
         main(["transcribe", str(files / "a.wav"), "-q"])
         assert capsys.readouterr().err == ""
+
+    def test_quiet_shows_errors(self, fake, files, capsys):
+        (files / "broken.wav").write_bytes(b"x")
+        assert run(["transcribe", str(files / "broken.wav"), "-q"]) == 1
+        assert "broken.wav: ошибка - ffmpeg не прочитал файл" in capsys.readouterr().err
+
+    def test_wrong_format_before_model(self, fake, files, capsys):
+        assert run(["transcribe", str(files / "a.wav"), "-f", "docx", "--delete-source"]) == 2
+        assert "Форматы не поддерживаются: docx" in capsys.readouterr().err
+        assert fake == []
+        assert (files / "a.wav").exists()
+
+    def test_delete_source_needs_results(self, fake, files, capsys):
+        assert run(["transcribe", str(files / "a.wav"), "--delete-source"]) == 2
+        assert "для --delete-source нужен --output-dir или --summary" in capsys.readouterr().err
+        assert fake == []
+
+    def test_delete_source_with_summary(self, fake, files, tmp_path, capsys):
+        main(
+            [
+                "transcribe",
+                str(files / "a.wav"),
+                "--delete-source",
+                "--summary",
+                str(tmp_path / "all.csv"),
+            ]
+        )
+        assert capsys.readouterr().out.startswith("Канал 0: Текст a.")
+        assert not (files / "a.wav").exists()
+
+    def test_no_files(self, fake, tmp_path, capsys):
+        main(["transcribe", str(tmp_path)])
+        assert "Файлов для распознавания нет" in capsys.readouterr().err
+        assert fake == []
 
     def test_several_txt(self, fake, files, capsys):
         main(["transcribe", str(files)])
@@ -190,6 +234,12 @@ class TestOutputDir:
     def test_wrong_workers(self, fake, files, tmp_path, capsys):
         assert run(["transcribe", str(files), "-o", str(tmp_path), "-j", "0"]) == 2
         assert "Число потоков должно быть положительным: 0" in capsys.readouterr().err
+        assert fake == []
+
+    def test_wrong_summary(self, fake, files, tmp_path, capsys):
+        assert run(["transcribe", str(files), "-o", str(tmp_path), "--summary", "all.txt"]) == 2
+        assert "Общий файл должен быть CSV или JSONL" in capsys.readouterr().err
+        assert fake == []
 
     def test_missing_path(self, fake, tmp_path, capsys):
         assert run(["transcribe", str(tmp_path / "missing.wav")]) == 2
@@ -268,6 +318,16 @@ class TestWatch:
         assert run(["transcribe", str(files), "--watch"]) == 2
         assert "для --watch нужен --output-dir" in capsys.readouterr().err
 
+    @pytest.mark.parametrize(
+        ("option", "message"),
+        [("--interval=-1", "Интервал просмотра должен быть положительным"),
+         ("--min-age=-5", "Время без изменений не может быть отрицательным")],
+    )  # fmt: skip
+    def test_wrong_timing(self, fake, files, tmp_path, capsys, option, message):
+        assert run(["transcribe", str(files), "-o", str(tmp_path), "--watch", option]) == 2
+        assert message in capsys.readouterr().err
+        assert fake == []
+
     def test_needs_directories(self, fake, files, tmp_path, capsys):
         assert run(["transcribe", str(files / "a.wav"), "-o", str(tmp_path), "--watch"]) == 2
         assert "--watch следит только за каталогами" in capsys.readouterr().err
@@ -277,7 +337,7 @@ class TestWatch:
 
         def watch(batch, directories, **kwargs):
             seen.update(kwargs, directories=directories, formats=batch.formats)
-            return Report(failed={Path("x"): "ошибка"})
+            return WatchReport(failed={Path("x"): "ошибка"})
 
         monkeypatch.setattr(cli, "watch", watch)
         code = run(
@@ -319,6 +379,10 @@ class TestArgparseMessages:
             ),
             (["transcribe", "x.wav", "-o"], "аргумент -o/--output-dir: нужно значение"),
             (["transcribe"], "нужны аргументы: ПУТЬ"),
+            (
+                ["transcribe", "x.wav", "--o", "y"],
+                "неоднозначный параметр --o: подходят --output-dir, --overwrite",
+            ),
         ],
     )
     def test_russian(self, capsys, argv, message):
@@ -333,13 +397,36 @@ def test_interrupt(fake, files):
     assert run(["transcribe", str(files / "interrupt.wav"), "-q"]) == 130
 
 
+class Console(io.TextIOWrapper):
+    def isatty(self):
+        return True
+
+
+def test_redirected_output_is_utf8(monkeypatch, fake, files):
+    buffer = io.BytesIO()
+    stream = io.TextIOWrapper(buffer, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", stream)
+    main(["transcribe", str(files / "a.wav"), "-q"])
+    stream.flush()
+    assert buffer.getvalue().decode("utf-8").startswith("Канал 0: Текст a.")
+
+
 def test_ascii_console(monkeypatch, fake, files):
     buffer = io.BytesIO()
-    stream = io.TextIOWrapper(buffer, encoding="ascii")
+    stream = Console(buffer, encoding="ascii")
     monkeypatch.setattr(sys, "stdout", stream)
     main(["transcribe", str(files / "a.wav"), "-q"])
     stream.flush()
     assert buffer.getvalue().startswith(b"????? 0: ????? a.")
+
+
+def test_broken_pipe(monkeypatch, fake, files):
+    class Closed(io.StringIO):
+        def write(self, text):
+            raise BrokenPipeError
+
+    monkeypatch.setattr(sys, "stdout", Closed())
+    assert run(["transcribe", str(files), "-q"]) == 1
 
 
 def test_module_import(fake):
