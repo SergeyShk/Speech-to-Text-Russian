@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 import os
 import glob
 import argparse
@@ -13,6 +13,8 @@ import pysubs2
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
 from tools.utils import create_logger
+
+COLUMNS = ['Audio File', 'Start', 'End', 'Name', 'Text']
 
 class TranscriptionsParser(object):
     """Класс для парсинга файлов транскрибации"""
@@ -118,7 +120,7 @@ class TranscriptionsParser(object):
         Аргументы:
             batch: пакет файлов            
         """
-        transcriptions = pd.DataFrame(columns=['Audio File', 'Start', 'End', 'Name', 'Text'])
+        rows = []
         if self.log:
             logger = create_logger('logger_' + str(os.getpid()), 'file', logging.DEBUG, self.log)
         else:
@@ -132,11 +134,12 @@ class TranscriptionsParser(object):
                     for event in transcription.events:
                         attributes = self.get_event_attributes(event)
                         attributes['Audio File'] = transcription.aegisub_project['Audio File']
-                        transcriptions = transcriptions.append(pd.DataFrame(attributes, index=[0])[transcriptions.columns], ignore_index=True)
+                        rows.append(attributes)
             except:
                 logger.error("Не удалось обработать файл '{}'".format(file))
-        with open(self.csv, 'a') as f:
-            transcriptions.to_csv(f, header=False, index=False, encoding='cp1251')
+        transcriptions = pd.DataFrame(rows, columns=COLUMNS)
+        with open(self.csv, 'a', encoding='utf-8', newline='') as f:
+            transcriptions.to_csv(f, header=False, index=False)
 
     def process_file(self, file):
         """
@@ -145,14 +148,13 @@ class TranscriptionsParser(object):
         Аргументы:
             file: .ASS файл
         """        
-        transcriptions = pd.DataFrame(columns=['Audio File', 'Start', 'End', 'Name', 'Text'])
+        rows = []
         transcription = pysubs2.load(file)
-        if transcription.events:
-            for event in transcription.events:
-                attributes = self.get_event_attributes(event)
-                attributes['Audio File'] = transcription.aegisub_project['Audio File']
-                transcriptions = transcriptions.append(pd.DataFrame(attributes, index=[0])[transcriptions.columns], ignore_index=True)
-        return transcriptions
+        for event in transcription.events:
+            attributes = self.get_event_attributes(event)
+            attributes['Audio File'] = transcription.aegisub_project['Audio File']
+            rows.append(attributes)
+        return pd.DataFrame(rows, columns=COLUMNS)
 
     
 def split_files_by_batch(files, batch_size):
@@ -189,9 +191,10 @@ if __name__ == '__main__':
 
     try:
         transcriptions_csv = CSV if CSV else str(OUTPUT_DIR / 'transcriptions.csv')
-        with open(transcriptions_csv, 'w') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Audio File', 'Start', 'End', 'Name', 'Text'])
+        # BOM нужен Excel, чтобы открыть UTF-8 с кириллицей
+        with open(transcriptions_csv, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f, lineterminator='\n')
+            writer.writerow(COLUMNS)
     except:
         raise Exception("Не удалось создать результирующий .CSV-файл")
         
@@ -223,7 +226,7 @@ if __name__ == '__main__':
             logger.info("Запуск сериализации результата парсинга")
             transcriptions_pkl = str(Path(OUTPUT_DIR) / 'transcriptions.pkl')
             with open(transcriptions_pkl, 'wb') as f:
-                transcriptions = pd.read_csv(transcriptions_csv, encoding='cp1251', low_memory=True)
+                transcriptions = pd.read_csv(transcriptions_csv, encoding='utf-8-sig', low_memory=True)
                 pickle.dump(transcriptions, f)
             logger.info("Завершение сериализации результата парсинга")
         except:

@@ -42,6 +42,7 @@ table.dataframe, .dataframe th, .dataframe td {
 }
 .dataframe td:nth-child(-n+3) {
     width: 7%;
+    white-space: nowrap;
 }
 .dataframe tr:hover {
     background-color: #ffff99;
@@ -52,4 +53,11 @@ table.dataframe, .dataframe th, .dataframe td {
     width: 500px;
     margin: 0 auto;
     margin-bottom: 100px;
+}
+
+.text-primary {
+    color: #337ab7 !important;
+}
+.text-info {
+    color: #31708f !important;
 }

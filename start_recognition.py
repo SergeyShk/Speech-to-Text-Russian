@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 import os
 import time
 import argparse
@@ -153,9 +153,10 @@ if __name__ == '__main__':
 
             try:
                 CSV = str(OUTPUT_DIR / str('transcriptions_' + time.strftime('%Y%m%d-%H%M%S') + '.csv'))
-                with open(CSV, 'w') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Audio File', 'Start', 'End', 'Name', 'Text'])
+                # BOM нужен Excel, чтобы открыть UTF-8 с кириллицей
+                with open(CSV, 'w', encoding='utf-8-sig', newline='') as f:
+                    writer = csv.writer(f, lineterminator='\n')
+                    writer.writerow(transcriptions_parser.COLUMNS)
             except:
                 raise Exception("Не удалось создать результирующий .CSV-файл")
 

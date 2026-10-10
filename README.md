@@ -13,11 +13,21 @@
 
 https://kaldi-asr.org/doc/tutorial_setup.html
 
-2. Установить необходимые Python-библиотеки:
+2. Установить Python 3.11 (версия зафиксирована в файле **.python-version**). Это последняя версия Python, для которой собран pykaldi 0.2.2.
+
+3. Установить необходимые Python-библиотеки:
 
 `$ pip install -r requirements.txt`
 
-3. Установить pykaldi:
+4. Установить pykaldi:
+
+* Из готового колеса для Python 3.11 со страницы релизов pykaldi 0.2.2 (https://github.com/pykaldi/pykaldi/releases/tag/v0.2.2). Колеса выложены сжатыми в .gz, перед установкой их нужно распаковать:
+
+`$ curl -LO https://github.com/pykaldi/pykaldi/releases/download/v0.2.2/pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl.gz`
+
+`$ gunzip pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl.gz`
+
+`$ pip install pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl`
 
 * С помощью conda (с поддержкой GPU):
 
@@ -31,15 +41,15 @@ https://kaldi-asr.org/doc/tutorial_setup.html
 
 https://github.com/pykaldi/pykaldi
 
-4. Добавить в PATH пути к компонентам kaldi:
+5. Добавить в PATH пути к компонентам kaldi:
 
 `$ PATH /kaldi/src/featbin:/kaldi/src/ivectorbin:/kaldi/src/online2bin:/kaldi/src/rnnlmbin:/kaldi/src/fstbin:$PATH`
 
-5. Склонировать репозиторий проекта:
+6. Склонировать репозиторий проекта:
 
 `$ git clone https://github.com/SergeyShk/Speech-to-Text-Russian.git`
 
-6. Отредактировать файл **model/conf/ivector_extractor.conf**, указав в нем корректные директории
+7. Отредактировать файл **model/conf/ivector_extractor.conf**, указав в нем корректные директории
 
 ### Docker
 
@@ -148,7 +158,9 @@ optional arguments:
 
 `$ cd web`
 
-`$ ./app.py`
+`$ SECRET_KEY=[KEY] ./app.py`
+
+[KEY] - секретный ключ Flask. Если переменная не задана, при каждом запуске генерируется случайный ключ.
 
 2. Перейти по адресу:
 
@@ -163,3 +175,9 @@ optional arguments:
 2. Перейти по адресу:
 
 `http://0.0.0.0:9000`
+
+## Лицензия
+
+Код проекта распространяется под лицензией MIT, см. файл **LICENSE.txt**.
+
+Модель распознавания в директории /model принадлежит Alpha Cephei и распространяется на собственных условиях, см. https://alphacephei.com/vosk/models
