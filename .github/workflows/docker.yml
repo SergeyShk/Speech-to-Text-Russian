@@ -108,6 +108,14 @@ jobs:
         run: |
           docker run --rm stt-ru:gpu --version
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:gpu transcribe call.wav -f json -q | jq -e '.segments | length == 5'
+      # Без GPU не хватает только libcuda.so.1: ее подставляет NVIDIA Container Toolkit
+      - name: Check CUDA libraries
+        run: |
+          provider=/opt/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime_providers_cuda.so
+          missing="$(docker run --rm --entrypoint ldd stt-ru:gpu "$provider" | awk '/not found/ {print $1}')"
+          echo "$missing"
+          test "$missing" = libcuda.so.1
+          docker run --rm --entrypoint ldconfig stt-ru:gpu -p | grep -F libcudnn.so.9
 
   publish:
     if: github.event_name == 'release'
