@@ -80,14 +80,15 @@ stt-ru serve                                                     # http://127.0.
 Канал 0 12.994 13.662 До свидания.
 
 >>> result.save("call.srt")
+PosixPath('call.srt')
 ```
 
 ## Docker
 
 ```bash
-docker run -d -p 8000:8000 -e STT_RU_TOKEN=секрет ghcr.io/sergeyshk/stt-ru          # веб-сервис
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru          # веб-сервис
 docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe call.wav         # один файл
-docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=секрет ghcr.io/sergeyshk/stt-ru:latest-gpu
+docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru:latest-gpu
 ```
 
 Модель по умолчанию уже в образе: контейнер распознает без сети. Тома, права на запись, Compose и требования GPU-образа - на странице [Docker](https://sergeyshk.github.io/Speech-to-Text-Russian/docker/).

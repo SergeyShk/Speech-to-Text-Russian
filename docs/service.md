@@ -10,7 +10,7 @@
 ``` bash
 pip install "stt-ru[service]"
 stt-ru serve                                         # http://127.0.0.1:8000
-STT_RU_TOKEN=секрет stt-ru serve --host 0.0.0.0 -j 2    # доступ по сети с токеном
+STT_RU_TOKEN=my-secret-token stt-ru serve --host 0.0.0.0 -j 2    # доступ по сети с токеном
 ```
 
 Описание REST API с примерами запросов открывается на `/docs`.
@@ -42,7 +42,7 @@ STT_RU_TOKEN=секрет stt-ru serve --host 0.0.0.0 -j 2    # доступ п�
 
 ## Токен доступа { #token }
 
-Токен задается переменной окружения `STT_RU_TOKEN` (параметр командной строки был бы виден всем в списке процессов). С токеном все действия с задачами требуют заголовок `Authorization: Bearer <токен>`; веб-интерфейс спрашивает токен один раз и хранит его в cookie на 30 дней. Без токена открыты страница, `/healthz`, `/v1/info` и описание API.
+Токен задается переменной окружения `STT_RU_TOKEN` (параметр командной строки был бы виден всем в списке процессов). С токеном все действия с задачами требуют заголовок `Authorization: Bearer <токен>`; веб-интерфейс спрашивает токен один раз и хранит его в cookie на 30 дней. Без токена открыты страница, `/healthz`, `/v1/info` и описание API. Токен - строка из латинских букв, цифр и знаков `-` и `_`: многие клиенты HTTP не передают кириллицу в заголовках.
 
 Без токена сервисом может пользоваться любой, кто достучится до порта, поэтому при `--host 0.0.0.0` сервис выводит предупреждение. Токен один на всех: это не учетные записи. По обычному HTTP токен передается открытым текстом, поэтому за пределами доверенной сети ставьте сервис за прокси с HTTPS (nginx, Caddy). Случайный токен:
 
@@ -70,10 +70,10 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/info` | Версия, модель, пределы, форматы, нужен ли токен |
 | `GET /healthz` | Проверка работы: `{"status": "ok"}` |
 
-Задача - JSON с полями `id`, `status` (`queued` - в очереди, `running` - распознается, `done` - готово, `failed` - ошибка), `filename`, `size`, `created`, `started`, `finished`, `expires` (когда задача будет удалена), `position` (сколько задач перед ней), `duration`, `channels`, `segments` и `error`. Ошибки - `{"detail": "..."}`: 401 без токена, 404 для удаленной задачи, 409 для неготовой или упавшей, 413 для большого файла, 503 при полной очереди.
+Задача - JSON с полями `id`, `status` (`queued` - в очереди, `running` - распознается, `done` - готово, `failed` - ошибка), `filename`, `size`, `created`, `started`, `finished`, `expires` (когда задача будет удалена), `position` (сколько задач перед ней), `duration`, `channels`, `segments` (число фрагментов) и `error`. Ошибки - `{"detail": "..."}`: 401 без токена, 404 для удаленной задачи, 409 для неготовой или упавшей, 413 для большого файла, 503 при полной очереди.
 
 ``` bash
-token="Authorization: Bearer секрет"
+token="Authorization: Bearer my-secret-token"
 job=$(curl -s -H "$token" -F file=@call.wav http://127.0.0.1:8000/v1/transcriptions | jq -r .id)
 curl -s -H "$token" http://127.0.0.1:8000/v1/jobs/$job | jq .status
 curl -s -H "$token" -OJ "http://127.0.0.1:8000/v1/jobs/$job/result?format=srt"
@@ -85,7 +85,7 @@ import time
 import requests
 
 api = "http://127.0.0.1:8000/v1"
-headers = {"Authorization": "Bearer секрет"}
+headers = {"Authorization": "Bearer my-secret-token"}
 with open("call.wav", "rb") as file:
     job = requests.post(f"{api}/transcriptions", files={"file": file}, headers=headers).json()
 while job["status"] in ("queued", "running"):
@@ -98,7 +98,7 @@ for segment in result["segments"]:
 
 ## Сервис в своем приложении { #embedding }
 
-`create_app` возвращает приложение ASGI (FastAPI) с очередью `JobQueue`; его можно запустить своим сервером или подключить в другое приложение:
+`create_app` возвращает приложение ASGI (FastAPI) с очередью `JobQueue`. Запускайте его своим сервером ASGI с корня адреса: страница обращается к `/static` и `/v1` от корня, а очистку задач по сроку и закрытие очереди выполняет запуск и остановка самого приложения, поэтому подключить его по пути внутри другого приложения нельзя.
 
 ``` python
 import uvicorn
@@ -107,6 +107,6 @@ from stt_ru import Transcriber
 from stt_ru.service import JobQueue, create_app
 
 jobs = JobQueue(Transcriber(), "/data/stt", workers=2, max_duration=3600, keep=3600)
-app = create_app(jobs, token="секрет", max_size=200 << 20)
+app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```

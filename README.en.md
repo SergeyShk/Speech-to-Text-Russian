@@ -80,6 +80,7 @@ stt-ru serve                                                     # http://127.0.
 Канал 0 12.994 13.662 До свидания.
 
 >>> result.save("call.srt")
+PosixPath('call.srt')
 ```
 
 The command messages and speaker names ("Канал N", Channel N) are in Russian.
@@ -87,9 +88,9 @@ The command messages and speaker names ("Канал N", Channel N) are in Russia
 ## Docker
 
 ```bash
-docker run -d -p 8000:8000 -e STT_RU_TOKEN=secret ghcr.io/sergeyshk/stt-ru           # web service
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru           # web service
 docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe call.wav         # one file
-docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=secret ghcr.io/sergeyshk/stt-ru:latest-gpu
+docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru:latest-gpu
 ```
 
 The default model is already in the image: the container recognizes speech without network. Volumes, write permissions, Compose and the GPU image requirements are on the [Docker](https://sergeyshk.github.io/Speech-to-Text-Russian/en/docker/) page.

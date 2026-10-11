@@ -20,7 +20,7 @@ stt-ru transcribe calls/ -o out/ --watch --delete-source    # folder monitoring
 *   A file given as an argument is taken with any extension: the format is detected from its content.
 *   From a folder, files with audio and video extensions are taken: `.wav`, `.flac`, `.ogg`, `.oga`, `.opus`, `.mp3`, `.m4a`, `.aac`, `.amr`, `.wma`, `.aif`, `.aiff`, `.au`, `.caf`, `.w64`, `.3gp`, `.mp4`, `.mov`, `.mkv`, `.avi`, `.webm` in any case. Hidden files and folders (names starting with a dot) are skipped; `-r` also searches subfolders.
 *   One file given by different paths is transcribed once.
-*   Formats other than WAV, FLAC, OGG and MP3 are read by ffmpeg (see [Installation](installation.md)).
+*   M4A, AAC, AMR, WMA and the sound of videos are read by ffmpeg (see [Installation](installation.md)).
 
 ## Result { #output }
 

@@ -45,13 +45,14 @@ stt-ru serve                                   # web interface at http://127.0.0
 Канал 0 12.994 13.662 До свидания.
 
 >>> result.save("call.srt")
+PosixPath('call.srt')
 ```
 
 On the first run the model (about 230 MB) is downloaded from Hugging Face.
 
 ## How it works
 
-1.  The file is read entirely: WAV, FLAC, OGG and MP3 by the soundfile library, other formats and the sound of videos by ffmpeg.
+1.  The file is read entirely: WAV, FLAC, OGG, MP3 and other uncompressed formats by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.
 2.  The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Identical channels are recognized once.
 3.  [Silero VAD](models.md#vad) speech detection cuts the recording into speech segments of at most 20 s, and the model recognizes each segment.
 4.  The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.

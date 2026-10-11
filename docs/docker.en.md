@@ -14,13 +14,13 @@ The image contains stt-ru with all extras (the service, quality evaluation, ffmp
 ## Web service
 
 ``` bash
-docker run -d --name stt-ru -p 8000:8000 -e STT_RU_TOKEN=secret ghcr.io/sergeyshk/stt-ru
+docker run -d --name stt-ru -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru
 ```
 
 The web interface is at `http://<server address>:8000`. The [service](service.md) parameters are passed after the image name together with the command:
 
 ``` bash
-docker run -d -p 8000:8000 -e STT_RU_TOKEN=secret ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -j 2 --max-size 1000
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -j 2 --max-size 1000
 ```
 
 `docker stop` stops the service cleanly: the image stops with the SIGINT signal, like Ctrl+C. The container state comes from a healthcheck: for `serve` it is the `/healthz` response, and with other commands the container is healthy while it runs.
@@ -39,10 +39,10 @@ Commands in the container run as the user with uid 1000. To write results (`-o`,
 
 ## Other models { #models }
 
-Other models are downloaded on the first run to `/opt/huggingface` inside the container and disappear with it. To avoid downloading them again after the container is recreated, keep the model cache in a volume and point `HF_HOME` to it; the default model is then also downloaded into the volume once:
+Other models are downloaded on the first run to `/opt/huggingface` inside the container and disappear with it. To avoid downloading them again after the container is recreated, mount a named volume to `/opt/huggingface`: on the first mount Docker copies the model from the image into it. The volume keeps its files after the image is updated; if the default model changes in a new version, it is downloaded into the volume.
 
 ``` bash
-docker run -d -p 8000:8000 -e STT_RU_TOKEN=secret -e HF_HOME=/models -v stt-models:/models ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -m t-tech/t-one
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token -v stt-models:/opt/huggingface ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -m t-tech/t-one
 ```
 
 ## Docker Compose
@@ -50,7 +50,7 @@ docker run -d -p 8000:8000 -e STT_RU_TOKEN=secret -e HF_HOME=/models -v stt-mode
 `docker/compose.yaml` in the repository runs the service with port 8000, a token and restarts. The token comes from an environment variable or an `.env` file next to the Compose file:
 
 ``` bash
-echo "STT_RU_TOKEN=secret" > docker/.env
+echo "STT_RU_TOKEN=my-secret-token" > docker/.env
 docker compose -f docker/compose.yaml up -d
 ```
 
@@ -63,7 +63,7 @@ The `-gpu` image recognizes speech on NVIDIA GPUs with CUDA 13. It needs:
 *   the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ``` bash
-docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=secret ghcr.io/sergeyshk/stt-ru:latest-gpu
+docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru:latest-gpu
 docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml up -d
 ```
 
@@ -76,8 +76,9 @@ make docker        # docker build -f docker/Dockerfile -t stt-ru .
 make docker-gpu    # docker build -f docker/Dockerfile.gpu -t stt-ru:gpu .
 ```
 
-The `MODEL` build argument changes the model downloaded into the image; an empty value builds an image without a model:
+The `MODEL` build argument changes the model downloaded into the image; an empty value builds an image without a model. The image commands still use the default model, so the downloaded model is chosen with `-m`:
 
 ``` bash
 docker build -f docker/Dockerfile --build-arg MODEL=t-tech/t-one -t stt-ru:t-one .
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token stt-ru:t-one serve --host 0.0.0.0 -m t-tech/t-one
 ```

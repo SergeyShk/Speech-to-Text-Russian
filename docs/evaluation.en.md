@@ -70,7 +70,7 @@ The exit code is 1 if a model failed to load, a recording failed or the report w
 
 ## Report { #report }
 
-`-o report.json` saves the reference path and, for each model, `wer`, `cer`, `speed`, the number of records `files` and errors `failed`, `digits_mismatch` and `results` per reference row: `audio`, `channel`, `reference`, `hypothesis`, `duration`, `seconds`, `words`, `substitutions`, `deletions`, `insertions`, `chars`, `char_errors`, `wer`, `cer` and `error`. With `hypothesis` and the error counts it is easy to find the recordings where the model makes the most mistakes.
+`-o report.json` saves the reference path and, for each model, `model`, `error` (loading error), `wer`, `cer`, `speed`, the number of records `files` and errors `failed`, `digits_mismatch` and `results` per reference row: `audio`, `channel`, `reference`, `hypothesis`, `duration`, `seconds`, `words`, `substitutions`, `deletions`, `insertions`, `chars`, `char_errors`, `wer`, `cer` and `error`. With `hypothesis` and the error counts it is easy to find the recordings where the model makes the most mistakes.
 
 ## Python library { #python }
 

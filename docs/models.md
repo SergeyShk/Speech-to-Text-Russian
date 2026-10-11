@@ -17,7 +17,7 @@
 | `nemo-fastconformer-ru-rnnt`, `nemo-fastconformer-ru-ctc` | NVIDIA NeMo FastConformer для русского с пунктуацией |
 | `alphacep/vosk-model-ru`, `alphacep/vosk-model-small-ru` | Модели Vosk; small - для слабых компьютеров |
 | `onnx-community/whisper-large-v3-turbo` | Многоязычная модель OpenAI Whisper; заметно тяжелее остальных |
-| `nemo-parakeet-tdt-0.6b-v3`, `nemo-canary-1b-v2` | Многоязычные модели NVIDIA |
+| `nemo-parakeet-tdt-0.6b-v3` | Многоязычная модель NVIDIA |
 
 Полный список и форматы файлов моделей - в [документации onnx-asr](https://github.com/istupakov/onnx-asr). Какая модель лучше для ваших записей, покажет [оценка качества](evaluation.md) на своей разметке:
 
@@ -45,7 +45,7 @@ stt-ru evaluate eval.csv -m gigaam-v3-e2e-rnnt -m t-tech/t-one -m alphacep/vosk-
 
 ## Файлы модели на диске { #local }
 
-`--model-dir` (аргумент `model_dir`) берет файлы модели из каталога: например, на компьютере без интернета. Если каталога нет, модель скачивается в него. Модель из кэша Hugging Face тоже работает без сети: кэш задается переменной `HF_HOME` (см. [Установка](installation.md#models)).
+`--model-dir` (аргумент `model_dir`) берет файлы модели распознавания из каталога: например, модель, скачанную вручную. Если каталога нет, модель скачивается в него. Silero VAD при этом берется из кэша Hugging Face, поэтому на компьютере без интернета проще скопировать кэш целиком и указать его в `HF_HOME` (см. [Установка](installation.md#models)).
 
 ``` bash
 stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e2e-rnnt

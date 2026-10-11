@@ -17,7 +17,7 @@ Any onnx-asr model can be chosen by name with `-m` or the `model` argument of `T
 | `nemo-fastconformer-ru-rnnt`, `nemo-fastconformer-ru-ctc` | NVIDIA NeMo FastConformer for Russian with punctuation |
 | `alphacep/vosk-model-ru`, `alphacep/vosk-model-small-ru` | Vosk models; small is for low-end computers |
 | `onnx-community/whisper-large-v3-turbo` | OpenAI Whisper multilingual model; much heavier than the others |
-| `nemo-parakeet-tdt-0.6b-v3`, `nemo-canary-1b-v2` | NVIDIA multilingual models |
+| `nemo-parakeet-tdt-0.6b-v3` | NVIDIA multilingual model |
 
 The full list and the model file formats are in the [onnx-asr documentation](https://github.com/istupakov/onnx-asr). Which model is best for your recordings is shown by a [quality evaluation](evaluation.md) on your own references:
 
@@ -45,7 +45,7 @@ int8 weights are about four times smaller than the original ones and usually fas
 
 ## Model files on disk { #local }
 
-`--model-dir` (the `model_dir` argument) takes the model files from a folder: for example, on a computer without internet. If the folder does not exist, the model is downloaded into it. A model from the Hugging Face cache also works without network: the cache is set by the `HF_HOME` variable (see [Installation](installation.md#models)).
+`--model-dir` (the `model_dir` argument) takes the recognition model files from a folder: for example, a model downloaded by hand. If the folder does not exist, the model is downloaded into it. Silero VAD is still taken from the Hugging Face cache, so on a computer without internet it is simpler to copy the whole cache and point `HF_HOME` to it (see [Installation](installation.md#models)).
 
 ``` bash
 stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e2e-rnnt

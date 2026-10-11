@@ -34,7 +34,7 @@ uv add "stt-ru[ffmpeg]"
 ```
 
 !!! tip "ffmpeg"
-    WAV, FLAC, OGG and MP3 are read by the soundfile library. Other formats, the sound of videos, recordings with a sample rate the model does not accept and files without the recording length in the header need ffmpeg. stt-ru looks for it in `PATH`, then in the `imageio-ffmpeg` package from the `ffmpeg` extra; the path can be set with `--ffmpeg`. If ffmpeg is needed but not found, the file is not transcribed and the message says what to install.
+    WAV, FLAC, OGG (including Opus), MP3, AIFF, AU, CAF and W64 are read by the soundfile library. M4A, AAC, AMR, WMA, the sound of videos, recordings with a sample rate the model does not accept and files without the recording length in the header need ffmpeg. stt-ru looks for it in `PATH`, then in the `imageio-ffmpeg` package from the `ffmpeg` extra; the path can be set with `--ffmpeg`. If ffmpeg is needed but not found, the file is not transcribed and the message says what to install.
 
 ## Models { #models }
 
@@ -44,11 +44,11 @@ A model is downloaded from Hugging Face on the first transcription and kept in i
 export HF_HOME=/data/models
 ```
 
-A model from the cache works without network. For a computer without internet, copy the cache folder or the model files to it and point `--model-dir` to their folder (see [Models](models.md#local)).
+A model from the cache works without network. For a computer without internet, copy the whole cache folder to it - it holds both the model and Silero VAD - and point `HF_HOME` to it (see also [Models](models.md#local)).
 
 ## GPUs and other devices { #devices }
 
-By default the model runs on the CPU with the `onnxruntime` package. For other devices it is replaced with an ONNX Runtime build of the same version:
+By default the model runs on the CPU with the `onnxruntime` package. For other devices it is replaced with another ONNX Runtime build: of the same version for NVIDIA GPUs, the latest one for DirectML (onnx-asr works with ONNX Runtime 1.18.1 and newer):
 
 | Device | `--device` | Package | Requirements |
 | :----- | :--------- | :------ | :----------- |

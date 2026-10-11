@@ -70,7 +70,7 @@ lectures/intro.mp3,"Сегодня мы поговорим о распознав
 
 ## Отчет { #report }
 
-`-o report.json` сохраняет путь к разметке и для каждой модели - `wer`, `cer`, `speed`, число записей `files` и ошибок `failed`, `digits_mismatch` и `results` по строкам разметки: `audio`, `channel`, `reference`, `hypothesis`, `duration`, `seconds`, `words`, `substitutions`, `deletions`, `insertions`, `chars`, `char_errors`, `wer`, `cer` и `error`. По `hypothesis` и числам ошибок удобно искать записи, на которых модель ошибается больше всего.
+`-o report.json` сохраняет путь к разметке и для каждой модели - `model`, `error` (ошибка загрузки), `wer`, `cer`, `speed`, число записей `files` и ошибок `failed`, `digits_mismatch` и `results` по строкам разметки: `audio`, `channel`, `reference`, `hypothesis`, `duration`, `seconds`, `words`, `substitutions`, `deletions`, `insertions`, `chars`, `char_errors`, `wer`, `cer` и `error`. По `hypothesis` и числам ошибок удобно искать записи, на которых модель ошибается больше всего.
 
 ## Библиотека Python { #python }
 

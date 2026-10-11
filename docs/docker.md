@@ -14,13 +14,13 @@
 ## Веб-сервис
 
 ``` bash
-docker run -d --name stt-ru -p 8000:8000 -e STT_RU_TOKEN=секрет ghcr.io/sergeyshk/stt-ru
+docker run -d --name stt-ru -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru
 ```
 
 Веб-интерфейс - на `http://<адрес сервера>:8000`. Параметры [сервиса](service.md) передаются после имени образа вместе с командой:
 
 ``` bash
-docker run -d -p 8000:8000 -e STT_RU_TOKEN=секрет ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -j 2 --max-size 1000
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -j 2 --max-size 1000
 ```
 
 `docker stop` останавливает сервис штатно: образ останавливается сигналом SIGINT, как Ctrl+C. Состояние контейнера показывает healthcheck: у `serve` - ответ `/healthz`, у других команд контейнер здоров, пока работает.
@@ -39,10 +39,10 @@ docker run -d -v /archive:/data --user "$(id -u):$(id -g)" ghcr.io/sergeyshk/stt
 
 ## Другие модели { #models }
 
-Другие модели скачиваются при первом запуске в `/opt/huggingface` внутри контейнера и пропадают вместе с ним. Чтобы не скачивать их заново после пересоздания контейнера, храните кэш моделей в томе и укажите его в `HF_HOME`; модель по умолчанию тогда тоже один раз скачается в том:
+Другие модели скачиваются при первом запуске в `/opt/huggingface` внутри контейнера и пропадают вместе с ним. Чтобы не скачивать их заново после пересоздания контейнера, подключите к `/opt/huggingface` именованный том: при первом подключении Docker скопирует в него модель из образа. Том хранит файлы и после обновления образа; если в новой версии сменится модель по умолчанию, она скачается в том.
 
 ``` bash
-docker run -d -p 8000:8000 -e STT_RU_TOKEN=секрет -e HF_HOME=/models -v stt-models:/models ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -m t-tech/t-one
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token -v stt-models:/opt/huggingface ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -m t-tech/t-one
 ```
 
 ## Docker Compose
@@ -50,7 +50,7 @@ docker run -d -p 8000:8000 -e STT_RU_TOKEN=секрет -e HF_HOME=/models -v st
 `docker/compose.yaml` в репозитории запускает сервис с портом 8000, токеном и перезапуском. Токен берется из переменной окружения или файла `.env` рядом с файлом Compose:
 
 ``` bash
-echo "STT_RU_TOKEN=секрет" > docker/.env
+echo "STT_RU_TOKEN=my-secret-token" > docker/.env
 docker compose -f docker/compose.yaml up -d
 ```
 
@@ -63,7 +63,7 @@ docker compose -f docker/compose.yaml up -d
 *   [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ``` bash
-docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=секрет ghcr.io/sergeyshk/stt-ru:latest-gpu
+docker run -d --gpus all -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt-ru:latest-gpu
 docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml up -d
 ```
 
@@ -76,8 +76,9 @@ make docker        # docker build -f docker/Dockerfile -t stt-ru .
 make docker-gpu    # docker build -f docker/Dockerfile.gpu -t stt-ru:gpu .
 ```
 
-Аргумент сборки `MODEL` меняет модель, которая загружается в образ; пустое значение собирает образ без модели:
+Аргумент сборки `MODEL` меняет модель, которая загружается в образ; пустое значение собирает образ без модели. Команды образа по-прежнему берут модель по умолчанию, поэтому загруженную модель указывают параметром `-m`:
 
 ``` bash
 docker build -f docker/Dockerfile --build-arg MODEL=t-tech/t-one -t stt-ru:t-one .
+docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token stt-ru:t-one serve --host 0.0.0.0 -m t-tech/t-one
 ```

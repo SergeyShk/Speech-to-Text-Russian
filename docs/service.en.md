@@ -10,7 +10,7 @@
 ``` bash
 pip install "stt-ru[service]"
 stt-ru serve                                         # http://127.0.0.1:8000
-STT_RU_TOKEN=secret stt-ru serve --host 0.0.0.0 -j 2    # network access with a token
+STT_RU_TOKEN=my-secret-token stt-ru serve --host 0.0.0.0 -j 2    # network access with a token
 ```
 
 The REST API reference with request examples is at `/docs`.
@@ -42,7 +42,7 @@ The model and speech detection parameters are on the [Models](models.md#options)
 
 ## Access token { #token }
 
-The token is set by the `STT_RU_TOKEN` environment variable (a command line parameter would be visible to everyone in the process list). With a token, all job actions require the `Authorization: Bearer <token>` header; the web interface asks for the token once and keeps it in a cookie for 30 days. Without a token, the page, `/healthz`, `/v1/info` and the API reference are open.
+The token is set by the `STT_RU_TOKEN` environment variable (a command line parameter would be visible to everyone in the process list). With a token, all job actions require the `Authorization: Bearer <token>` header; the web interface asks for the token once and keeps it in a cookie for 30 days. Without a token, the page, `/healthz`, `/v1/info` and the API reference are open. The token is a string of Latin letters, digits, `-` and `_`: many HTTP clients do not send Cyrillic in headers.
 
 Without a token anyone who can reach the port can use the service, so with `--host 0.0.0.0` the service prints a warning. There is one token for everyone: these are not user accounts. Over plain HTTP the token travels in clear text, so outside a trusted network put the service behind an HTTPS proxy (nginx, Caddy). A random token:
 
@@ -70,10 +70,10 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/info` | Version, model, limits, formats, whether a token is required |
 | `GET /healthz` | Health check: `{"status": "ok"}` |
 
-A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 409 for a job that is not ready or failed, 413 for a large file, 503 when the queue is full.
+A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 409 for a job that is not ready or failed, 413 for a large file, 503 when the queue is full.
 
 ``` bash
-token="Authorization: Bearer secret"
+token="Authorization: Bearer my-secret-token"
 job=$(curl -s -H "$token" -F file=@call.wav http://127.0.0.1:8000/v1/transcriptions | jq -r .id)
 curl -s -H "$token" http://127.0.0.1:8000/v1/jobs/$job | jq .status
 curl -s -H "$token" -OJ "http://127.0.0.1:8000/v1/jobs/$job/result?format=srt"
@@ -85,7 +85,7 @@ import time
 import requests
 
 api = "http://127.0.0.1:8000/v1"
-headers = {"Authorization": "Bearer secret"}
+headers = {"Authorization": "Bearer my-secret-token"}
 with open("call.wav", "rb") as file:
     job = requests.post(f"{api}/transcriptions", files={"file": file}, headers=headers).json()
 while job["status"] in ("queued", "running"):
@@ -98,7 +98,7 @@ for segment in result["segments"]:
 
 ## The service in your application { #embedding }
 
-`create_app` returns an ASGI (FastAPI) application with a `JobQueue`; it can be run by your own server or mounted into another application:
+`create_app` returns an ASGI (FastAPI) application with a `JobQueue`. Run it with your own ASGI server at the root of an address: the page requests `/static` and `/v1` from the root, and cleaning up expired jobs and closing the queue happen on the startup and shutdown of the application itself, so it cannot be mounted under a path inside another application.
 
 ``` python
 import uvicorn
@@ -107,6 +107,6 @@ from stt_ru import Transcriber
 from stt_ru.service import JobQueue, create_app
 
 jobs = JobQueue(Transcriber(), "/data/stt", workers=2, max_duration=3600, keep=3600)
-app = create_app(jobs, token="secret", max_size=200 << 20)
+app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
