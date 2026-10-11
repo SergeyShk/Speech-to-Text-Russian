@@ -29,7 +29,7 @@ Models are loaded one after another; a model that fails to load is marked in the
 
 References are a CSV file, a JSON Lines file or a folder. Files are UTF-8, and recording paths are relative to the reference file.
 
-**CSV** with the columns `audio`, `text` and an optional `channel`. The separator is a comma, a semicolon (as Excel saves in the Russian locale) or a tab, column names may be in any case, and empty rows are skipped.
+**CSV** with the columns `audio`, `text` and an optional `channel`. The separator is a comma, a semicolon (as Excel saves in the Russian locale) or a tab, column names may be in any case, and empty rows are skipped. Put text that contains the separator in quotes: a row with more values than columns is an error with its number.
 
 ``` text
 audio,text,channel
@@ -47,7 +47,7 @@ lectures/intro.mp3,"Сегодня мы поговорим о распознав
 
 **A folder** where every audio file has a reference with the same name: `call.wav` and `call.txt`.
 
-`channel` is the channel number of a stereo recording where a channel is a speaker: the reference is compared only with the text of that channel. If there is one track (a mono recording, `--mono` or identical channels), the whole text is compared. A file that appears in the references several times is transcribed once.
+`channel` is the channel number of a stereo recording where a channel is a speaker: the reference is compared only with the text of that channel. If there is one track (a mono recording, `--mono` or identical channels), the whole text is compared; a channel that matched another channel of the recording is compared with the text of that channel. A file that appears in the references several times is transcribed once.
 
 ## Normalization { #normalization }
 
@@ -64,9 +64,9 @@ Numbers are not converted between digits and words. If digits appear only in the
 | `-o`, `--output` | - | Detailed report in JSON |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
-The other model and speech detection parameters are on the [Models](models.md#options) page; `--model-dir` is allowed only with one model. The references and arguments are checked before the models are loaded.
+The other model and speech detection parameters are on the [Models](models.md#options) page; `--model-dir` is allowed only with one model. The references and arguments, including the onnx-asr model names and the report path, are checked before the models are loaded; a model from Hugging Face (a name with "/") is checked when it loads.
 
-The exit code is 1 if a model failed to load, a recording failed or the report was not saved, and 2 for invalid arguments or references.
+The exit code is 1 if a model failed to load, a recording failed or the report was not saved, 2 for invalid arguments or references, and 130 for Ctrl+C: the table and the report are kept for the models evaluated completely.
 
 ## Report { #report }
 

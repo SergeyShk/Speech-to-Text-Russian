@@ -179,9 +179,12 @@ def _hypothesis(transcript: Transcript, channel: int | None) -> str:
     segments = transcript.segments
     # Одна дорожка - моно, сведенные или одинаковые каналы: сравнивается весь текст
     if channel is not None and transcript.channels > 1:
-        if channel >= transcript.channels:
-            raise ParameterError(f"канала {channel} нет: каналов в записи - {transcript.channels}")
-        segments = tuple(segment for segment in segments if segment.channel == channel)
+        channel_map = transcript.channel_map or tuple(range(transcript.channels))
+        if channel >= len(channel_map):
+            raise ParameterError(f"канала {channel} нет: каналов в записи - {len(channel_map)}")
+        # Канал, совпавший с другим, распознан под номером того канала
+        target = channel_map[channel]
+        segments = tuple(segment for segment in segments if segment.channel == target)
     return " ".join(segment.text for segment in segments)
 
 

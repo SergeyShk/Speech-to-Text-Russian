@@ -19,10 +19,11 @@ from stt_ru.exceptions import AudioError, MissingDependencyError
 class FakeTranscriber:
     """Распознает по таблице: имя файла - фрагменты; нет в таблице - ошибка чтения"""
 
-    def __init__(self, texts, channels=2):
+    def __init__(self, texts, channels=2, channel_map=()):
         self.recognizer = SimpleNamespace(model="fake")
         self.texts = texts
         self.channels = channels
+        self.channel_map = channel_map
         self.calls = []
 
     def transcribe(self, path):
@@ -34,7 +35,7 @@ class FakeTranscriber:
         segments = tuple(
             Segment(0.0, 1.0, text, channel) for channel, text in self.texts[path.name]
         )
-        return Transcript(segments, 4.0, self.channels, "fake", path.name)
+        return Transcript(segments, 4.0, self.channels, "fake", path.name, self.channel_map)
 
 
 def test_require_jiwer():
@@ -148,6 +149,16 @@ class TestEvaluate:
         assert messages == [
             f"[fake 1/1] {tmp_path / 'a.wav'}, канал 2: ошибка - канала 2 нет: каналов в записи - 2"
         ]
+
+    def test_duplicate_channel_uses_matching_track(self, tmp_path):
+        # Каналы 0 и 1 одинаковы: распознан канал 0, канал 2 - свой
+        texts = {"a.wav": [(0, "Угу."), (2, "Добрый день.")]}
+        transcriber = FakeTranscriber(texts, channels=2, channel_map=(0, 0, 2))
+        samples = [Sample(tmp_path / "a.wav", "угу", channel) for channel in (0, 1, 2)]
+        report = evaluate(transcriber, samples, errors=ignore)
+        assert [result.hypothesis for result in report.files] == ["Угу.", "Угу.", "Добрый день."]
+        report = evaluate(transcriber, [Sample(tmp_path / "a.wav", "да", 3)], errors=ignore)
+        assert report.files[0].error == "канала 3 нет: каналов в записи - 3"
 
     def test_failed_file(self, tmp_path):
         transcriber = FakeTranscriber({"b.wav": [(0, "Да.")]})

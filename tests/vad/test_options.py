@@ -59,3 +59,12 @@ def test_pad_at_limit(seconds, pad):
 
 def test_parameter_error_is_value_error():
     assert issubclass(ParameterError, ValueError)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    "name", ["threshold", "min_speech_duration_ms", "max_speech_duration_s", "speech_pad_ms"]
+)
+def test_not_finite(name, value):
+    with pytest.raises(ParameterError, match=f"{name} должен быть конечным числом"):
+        VadOptions(**{name: value})

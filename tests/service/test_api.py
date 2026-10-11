@@ -1,6 +1,9 @@
+import asyncio
+import io
 import json
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import pytest
@@ -10,7 +13,7 @@ import stt_ru
 from stt_ru import Transcriber
 from stt_ru.service import JobQueue, api, create_app
 
-from .conftest import wait, wav_bytes
+from .conftest import job_folders, wait, wav_bytes
 
 CALL = Path(__file__).parent.parent / "data" / "call.wav"
 
@@ -150,6 +153,19 @@ class TestJobs:
         assert response.headers["retry-after"] == "60"
         assert response.json()["detail"] == "Очередь заполнена: задач в ней 1"
 
+    def test_queue_filled_after_check(self, transcriber, tmp_path, monkeypatch):
+        transcriber.gate.clear()
+        jobs = JobQueue(transcriber, tmp_path, max_queue=1)
+        with make_client(jobs) as client:
+            wait(jobs, upload(client).json()["id"], ("running",))
+            assert upload(client).status_code == 202
+            # Другая загрузка заняла место между проверкой в _Guard и постановкой в очередь
+            monkeypatch.setattr(jobs, "full", lambda: False)
+            response = upload(client)
+            transcriber.gate.set()
+        assert response.status_code == 503
+        assert response.headers["retry-after"] == "60"
+
     def test_missing_file_field(self, client):
         assert client.post("/v1/transcriptions", data={"name": "x"}).status_code == 422
 
@@ -211,13 +227,35 @@ class TestAudio:
         job = finished(client, jobs, "запись")
         response = client.get(f"/v1/jobs/{job.id}/audio")
         assert response.headers["content-type"] == "application/octet-stream"
+        assert response.headers["content-disposition"].startswith("attachment;")
+
+    @pytest.mark.parametrize("name", ["evil.html", "evil.svg"])
+    def test_page_served_as_file(self, client, jobs, name):
+        content = b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
+        response = upload(client, name, content)
+        job = wait(jobs, response.json()["id"])
+        response = client.get(f"/v1/jobs/{job.id}/audio")
+        assert response.headers["content-type"] == "application/octet-stream"
+        assert response.headers["content-disposition"].startswith("attachment;")
+        assert response.headers["content-security-policy"] == "default-src 'none'; sandbox"
+
+
+class TestPolicy:
+    def test_api_sandboxed(self, client):
+        assert client.get("/v1/info").headers["content-security-policy"] == (
+            "default-src 'none'; sandbox"
+        )
+
+    def test_page_and_docs_not_sandboxed(self, client):
+        assert "sandbox" not in client.get("/").headers["content-security-policy"]
+        assert "content-security-policy" not in client.get("/docs").headers
 
 
 class TestLimits:
     def test_content_length(self, jobs):
         with make_client(jobs, max_size=1000) as client:
             response = upload(client, content=b"x" * 70_000)
-            assert list(jobs.directory.iterdir()) == []
+            assert job_folders(jobs) == []
         assert response.status_code == 413
         assert response.json() == {"detail": "Файл больше 0.000953674 МБ"}
 
@@ -233,7 +271,7 @@ class TestLimits:
                 content=body(),
                 headers={"Content-Type": "multipart/form-data; boundary=x"},
             )
-            assert list(jobs.directory.iterdir()) == []
+            assert job_folders(jobs) == []
         assert response.status_code == 413
 
     def test_file_size(self, jobs):
@@ -266,7 +304,7 @@ class TestToken:
             assert response.status_code == 401, path
             assert response.headers["www-authenticate"] == "Bearer"
             assert response.json() == {"detail": "Нужен токен доступа"}
-        assert list(jobs.directory.iterdir()) == []
+        assert job_folders(jobs) == []
 
     def test_public(self, secured):
         assert secured.get("/").status_code == 200
@@ -325,3 +363,62 @@ def test_real_model(tmp_path):
         waveform = client.get(f"/v1/jobs/{job.id}/waveform").json()
     assert "Канал 1: Наталья, благодарю вас за ожидание." in srt
     assert len(waveform["peaks"]) == 2
+
+
+def asgi_upload(app, headers=()):
+    """Загрузка напрямую через ASGI: тело читать нельзя"""
+    messages = []
+
+    async def receive():
+        raise AssertionError("тело загрузки не должно читаться")
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+        "scheme": "http", "path": "/v1/transcriptions", "raw_path": b"/v1/transcriptions",
+        "query_string": b"", "root_path": "", "headers": list(headers),
+        "client": ("127.0.0.1", 1), "server": ("127.0.0.1", 8000),
+    }  # fmt: skip
+    asyncio.run(app(scope, receive, send))
+    start = next(message for message in messages if message["type"] == "http.response.start")
+    body = b"".join(message.get("body", b"") for message in messages[1:])
+    return start["status"], json.loads(body)
+
+
+class TestRefusedBeforeBody:
+    def test_without_token(self, jobs):
+        status, body = asgi_upload(create_app(jobs, token="секрет"))
+        assert (status, body) == (401, {"detail": "Нужен токен доступа"})
+
+    def test_full_queue(self, transcriber, tmp_path):
+        transcriber.gate.clear()
+        jobs = JobQueue(transcriber, tmp_path, max_queue=1)
+        try:
+            wait(jobs, jobs.submit("a.wav", io.BytesIO(wav_bytes())).id, ("running",))
+            jobs.submit("b.wav", io.BytesIO(wav_bytes()))
+            status, body = asgi_upload(create_app(jobs))
+        finally:
+            transcriber.gate.set()
+            jobs.close()
+        assert (status, body) == (503, {"detail": "Очередь заполнена: задач в ней 1"})
+
+    def test_stopped_during_upload(self, jobs):
+        async def cancelled(scope, receive, send):
+            raise asyncio.CancelledError
+
+        guard = api._Guard(cancelled, max_body=1000)
+        app = SimpleNamespace(state=SimpleNamespace(settings=api._Settings(jobs, None, 1000)))
+        messages = []
+
+        async def send(message):
+            messages.append(message)
+
+        scope = {
+            "type": "http", "method": "POST", "path": "/v1/transcriptions",
+            "headers": [], "app": app, "query_string": b"",
+        }  # fmt: skip
+        asyncio.run(guard(scope, None, send))
+        assert messages[0]["status"] == 503
+        assert json.loads(messages[1]["body"]) == {"detail": "Сервис останавливается"}

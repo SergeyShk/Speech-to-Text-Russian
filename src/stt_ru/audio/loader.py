@@ -1,4 +1,6 @@
+import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +17,9 @@ Samples = npt.NDArray[np.float32]
 
 # SF_COUNT_MAX: libsndfile не знает длину записи
 _UNKNOWN_FRAMES = 2**63 - 1
+# Больше каналов бывает у массива формы (число каналов, число отсчетов), а не у записи
+MAX_CHANNELS = 64
+_FFMPEG_PREFIX = re.compile(r"^\[[^\]]*\]\s*")
 
 
 @dataclass(frozen=True, eq=False)
@@ -30,8 +35,8 @@ class Audio:
         sample_rate (int): Частота дискретизации, Гц
 
     Исключения:
-        AudioError: Если отсчеты не двумерный массив float32, в нем нет каналов
-            или частота дискретизации не положительна
+        AudioError: Если отсчеты не двумерный массив float32, в нем нет каналов или их
+            больше MAX_CHANNELS, или частота дискретизации не положительна
 
     Пример использования:
         >>> import numpy as np
@@ -51,6 +56,11 @@ class Audio:
             )
         if self.samples.shape[1] == 0:
             raise AudioError("В записи нет каналов")
+        if self.samples.shape[1] > MAX_CHANNELS:
+            raise AudioError(
+                f"Каналов {self.samples.shape[1]}, больше {MAX_CHANNELS}: отсчеты должны иметь "
+                "форму (число отсчетов, число каналов); массив (каналы, отсчеты) транспонируйте"
+            )
         if self.sample_rate <= 0:
             raise AudioError(
                 f"Частота дискретизации должна быть положительной: {self.sample_rate}"
@@ -196,17 +206,19 @@ def load_audio(
         path (str): Путь к файлу
         sample_rate (int): Частота дискретизации результата, Гц; None - частота файла
         ffmpeg (str): Путь к программе ffmpeg; None - поиск через find_ffmpeg
-        max_duration (float): Наибольшая длительность записи, с; None - без ограничения.
-            Длинная запись не декодируется целиком: длительность проверяется
-            по заголовку, а ffmpeg останавливается после max_duration
+        max_duration (float): Наибольшая длительность записи, с, конечное положительное
+            число; None - без ограничения. Длинная запись не декодируется целиком:
+            длительность проверяется по заголовку, а ffmpeg останавливается после max_duration
 
     Вывод:
         Audio: Запись со всеми каналами файла
 
     Исключения:
         FileNotFoundError: Если файла нет
-        AudioError: Если частота дискретизации не положительна, файл не читается,
-            для него нужен ffmpeg, а ffmpeg не найден, или запись длиннее max_duration
+        AudioError: Если частота дискретизации не положительна, файл пуст или не читается,
+            в нем нет звука, для него нужен ffmpeg, а ffmpeg не найден, или запись длиннее
+            max_duration
+        ParameterError: Если max_duration не конечное положительное число
 
     Пример использования:
         >>> from stt_ru.audio import load_audio
@@ -216,11 +228,15 @@ def load_audio(
     """
     if sample_rate is not None and sample_rate <= 0:
         raise AudioError(f"Частота дискретизации должна быть положительной: {sample_rate}")
-    if max_duration is not None and max_duration <= 0:
-        raise ParameterError(f"Наибольшая длительность должна быть положительной: {max_duration}")
+    if max_duration is not None and not (math.isfinite(max_duration) and max_duration > 0):
+        raise ParameterError(
+            f"Наибольшая длительность должна быть конечным положительным числом: {max_duration}"
+        )
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"Файл не найден: {source}")
+    if source.stat().st_size == 0:
+        raise AudioError(f"Файл пуст: {source}")
     audio = _read(source, sample_rate, ffmpeg, max_duration)
     if max_duration is not None:
         _check_duration(audio.duration, max_duration)
@@ -283,7 +299,8 @@ def _decode(
     with tempfile.TemporaryDirectory() as directory:
         output = Path(directory) / "audio.wav"
         # Префикс file: не дает ffmpeg принять имя файла за протокол вроде concat: или http:
-        command = [ffmpeg, "-nostdin", "-v", "error", "-i", f"file:{path.resolve()}", "-vn"]
+        command = [ffmpeg, "-nostdin", "-v", "error", "-i", f"file:{path.resolve()}"]
+        command += ["-map", "0:a:0"]
         # RF64 нужен записям длиннее 4 ГиБ: обычный WAV ffmpeg молча обрезает
         command += ["-c:a", "pcm_f32le", "-rf64", "auto"]
         if sample_rate is not None:
@@ -299,8 +316,19 @@ def _decode(
         except OSError as error:
             raise AudioError(f"Не удалось запустить ffmpeg ({ffmpeg}): {error}") from error
         if result.returncode != 0:
-            raise AudioError(f"ffmpeg не прочитал файл {path}: {result.stderr.strip()}")
+            message = _ffmpeg_error(result.stderr).replace(f"file:{path.resolve()}", str(path))
+            raise AudioError(f"ffmpeg не прочитал файл {path}: {message}")
         samples: Samples
         rate: int
         samples, rate = sf.read(output, dtype="float32", always_2d=True)
     return samples, rate
+
+
+def _ffmpeg_error(stderr: str) -> str:
+    if "matches no streams" in stderr:
+        return "в файле нет звуковой дорожки"
+    # Первая строка без адреса вида [in#0 @ 0x...]: дальше ffmpeg повторяет ее с путями
+    for line in stderr.splitlines():
+        if text := _FFMPEG_PREFIX.sub("", line).strip():
+            return text
+    return "неизвестная ошибка"

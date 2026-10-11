@@ -1,4 +1,5 @@
 import contextlib
+import math
 import queue
 import re
 import secrets
@@ -9,7 +10,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
-from typing import BinaryIO, Literal
+from typing import IO, BinaryIO, Literal
 
 from ..batch import Log, ignore
 from ..exceptions import ParameterError, SttRuError
@@ -20,6 +21,8 @@ Status = Literal["queued", "running", "done", "failed"]
 PEAKS = 2000
 _SUFFIX = re.compile(r"\.[A-Za-z0-9]{1,10}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+PREFIX = "stt-ru-"
+LOCK = ".lock"
 
 
 @dataclass
@@ -72,7 +75,8 @@ class JobQueue:
         Модель загружена один раз; задачи распознают workers потоков по порядку
         поступления. Файлы задач лежат во временном каталоге внутри directory и удаляются
         вместе с задачей: по запросу, через keep секунд после окончания или при close.
-        Задачи хранятся в памяти и не переживают перезапуск сервиса
+        Задачи хранятся в памяти и не переживают перезапуск сервиса; каталоги процессов,
+        завершившихся аварийно, удаляются при создании очереди (кроме Windows)
 
     Аргументы:
         transcriber (Transcriber): Распознаватель
@@ -82,10 +86,12 @@ class JobQueue:
         max_duration (float): Наибольшая длительность записи, с; None - без ограничения
         keep (float): Сколько секунд хранить задачу после окончания
         log (Callable[[str], None]): Ход работы
+        errors (Callable[[str], None]): Ошибки задач
         clock (Callable[[], float]): Текущее время, с от начала эпохи
 
     Исключения:
-        ParameterError: Если workers, max_queue, max_duration или keep не положительны
+        ParameterError: Если workers, max_queue, max_duration или keep не конечные
+            положительные числа
     """
 
     def __init__(
@@ -98,21 +104,29 @@ class JobQueue:
         max_duration: float | None = None,
         keep: float = 86400.0,
         log: Log = ignore,
+        errors: Log = ignore,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        for name, value in (("workers", workers), ("max_queue", max_queue), ("keep", keep)):
-            if value <= 0:
-                raise ParameterError(f"{name} должен быть положительным: {value}")
-        if max_duration is not None and max_duration <= 0:
-            raise ParameterError(f"max_duration должен быть положительным: {max_duration}")
+        limits = [("workers", workers), ("max_queue", max_queue), ("keep", keep)]
+        if max_duration is not None:
+            limits.append(("max_duration", max_duration))
+        for name, value in limits:
+            if not (math.isfinite(value) and value > 0):
+                raise ParameterError(f"{name} должен быть положительным числом: {value}")
         self.transcriber = transcriber
         self.max_queue = max_queue
         self.max_duration = max_duration
         self.keep = keep
         self.log = log
+        self.errors = errors
         self.clock = clock
-        self.directory = Path(tempfile.mkdtemp(prefix="stt-ru-", dir=directory))
+        stale = _remove_stale(Path(directory or tempfile.gettempdir()))
+        self.directory = Path(tempfile.mkdtemp(prefix=PREFIX, dir=directory))
+        self._held = _hold(self.directory)
+        if stale:
+            self._say(f"Удалены файлы прошлых запусков, завершившихся аварийно: {stale}")
         self._jobs: dict[str, Job] = {}
+        self._reserved = 0
         self._lock = threading.Lock()
         self._pending: queue.SimpleQueue[str | None] = queue.SimpleQueue()
         self._threads = [
@@ -137,26 +151,41 @@ class JobQueue:
             QueueFullError: Если в очереди max_queue задач
         """
         with self._lock:
-            if self._waiting() >= self.max_queue:
+            if self._waiting() + self._reserved >= self.max_queue:
                 raise QueueFullError(f"Очередь заполнена: задач в ней {self.max_queue}")
+            # Место занимается до копирования: одновременные загрузки не превысят очередь
+            self._reserved += 1
         name = _CONTROL.sub("", PureWindowsPath(filename).name).strip()[-200:] or "audio"
         job_id = secrets.token_urlsafe(16)
         folder = self.directory / job_id
-        folder.mkdir()
         suffix = _SUFFIX.search(name)
         path = folder / ("source" + (suffix.group().lower() if suffix else ""))
         try:
+            folder.mkdir()
             with path.open("wb") as file:
                 shutil.copyfileobj(content, file, 1 << 20)
+            job = Job(job_id, name, path, path.stat().st_size, self.clock())
         except BaseException:
+            with self._lock:
+                self._reserved -= 1
             shutil.rmtree(folder, ignore_errors=True)
             raise
-        job = Job(job_id, name, path, path.stat().st_size, self.clock())
         self._say(f"[{job_id}] {name}: в очереди")
         with self._lock:
+            self._reserved -= 1
             self._jobs[job_id] = job
         self._pending.put(job_id)
         return job
+
+    def full(self) -> bool:
+        """
+        Заполнена ли очередь
+
+        Вывод:
+            bool: В очереди max_queue задач, включая файлы, которые еще загружаются
+        """
+        with self._lock:
+            return self._waiting() + self._reserved >= self.max_queue
 
     def get(self, job_id: str) -> Job | None:
         """
@@ -254,11 +283,13 @@ class JobQueue:
             self._jobs.clear()
         # В Windows файл, который еще читает поток распознавания, не удаляется
         shutil.rmtree(self.directory, ignore_errors=True)
+        if self._held is not None:
+            self._held.close()
 
-    def _say(self, message: str) -> None:
+    def _say(self, message: str, log: Log | None = None) -> None:
         # Ошибка вывода (закрытый stderr) не должна останавливать поток распознавания
         with contextlib.suppress(Exception):
-            self.log(message)
+            (log or self.log)(message)
 
     def _waiting(self) -> int:
         return sum(1 for job in self._jobs.values() if job.status == "queued" and not job.deleted)
@@ -288,7 +319,7 @@ class JobQueue:
             with self._lock:
                 job.error, job.finished = text, self.clock()
                 job.status = "failed"
-            self._say(f"[{job.id}] {job.filename}: ошибка - {job.error}")
+            self._say(f"[{job.id}] {job.filename}: ошибка - {job.error}", self.errors)
         else:
             with self._lock:
                 job.transcript, job.finished = transcript, self.clock()
@@ -302,3 +333,35 @@ class JobQueue:
             removed = job.deleted and self._jobs.pop(job.id, None) is not None
         if removed:
             shutil.rmtree(job.path.parent, ignore_errors=True)
+
+
+def _hold(directory: Path) -> IO[str] | None:
+    # Блокировку держит процесс сервиса; ядро снимает ее и после kill -9
+    try:
+        import fcntl
+    except ImportError:
+        return None
+    pending = directory / f"{LOCK}.part"
+    handle = pending.open("w")
+    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    # Файл блокировки появляется уже занятым: другой запуск не примет каталог за брошенный
+    pending.rename(directory / LOCK)
+    return handle
+
+
+def _remove_stale(parent: Path) -> int:
+    try:
+        import fcntl
+    except ImportError:
+        return 0
+    removed = 0
+    for folder in parent.glob(f"{PREFIX}*"):
+        # Нет файла блокировки, чужой каталог без доступа или живой процесс - не трогать
+        try:
+            with (folder / LOCK).open() as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+        removed += 1
+    return removed

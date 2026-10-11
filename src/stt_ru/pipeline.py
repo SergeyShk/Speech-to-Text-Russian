@@ -19,8 +19,11 @@ CUT_SEARCH_SECONDS = 5.0
 CUT_FRAME_SECONDS = 0.02
 CUT_QUIET_SECONDS = 0.3
 CUT_FLOOR_DB = 40.0
-# Каналы с энергией разности ниже -30 дБ - одна запись, сохраненная в несколько каналов
+# Остаток ниже -30 дБ после подбора громкости и сдвига: одна запись в нескольких каналах
 SAME_CHANNEL_RATIO = 1e-3
+SAME_CHANNEL_LAG = 0.01
+LAG_FRAME = 1 << 14
+LAG_FRAMES = 16
 
 Track = tuple[int | None, Samples]
 
@@ -31,10 +34,11 @@ class Transcriber:
 
     Описание:
         Каналы стереозаписи распознаются отдельно: в записях разговоров каждый канал - свой
-        говорящий; одинаковые каналы (энергия разности ниже -30 дБ) распознаются один раз
-        как сведенная запись. Файл с частотой, которую модель не принимает,
-        передискретизируется в 16 кГц через ffmpeg (см. load_audio). Записи длиннее 10 минут
-        распознаются окнами около 10 минут с границей в паузе (см. cut_points)
+        говорящий; каналы, которые отличаются только громкостью и сдвигом до 10 мс
+        (см. same_signal), распознаются один раз. Файл с частотой, которую модель
+        не принимает, и формат, который читает только ffmpeg, переводятся в 16 кГц через
+        ffmpeg (см. load_audio). Записи длиннее 10 минут распознаются окнами около 10 минут
+        с границей в паузе (см. cut_points)
 
     Аргументы:
         model (str): Имя модели onnx-asr (см. Recognizer)
@@ -94,7 +98,8 @@ class Transcriber:
         Чтение аудиофайла с частотой, которую принимает модель
 
         Описание:
-            Файл с другой частотой передискретизируется в 16 кГц (см. load_audio)
+            Файл с другой частотой и формат, который читает только ffmpeg, декодируются
+            сразу в 16 кГц (см. load_audio)
 
         Аргументы:
             path (str): Путь к файлу
@@ -107,17 +112,15 @@ class Transcriber:
             FileNotFoundError: Если файла нет
             AudioError: Если файл не читается или запись длиннее max_duration
         """
+        # Именованный канал без писателя заблокировал бы sf.info навсегда
+        if not Path(path).is_file():
+            raise FileNotFoundError(f"Файл не найден: {path}")
         try:
             native: int | None = sf.info(os.fspath(path)).samplerate
         except sf.LibsndfileError:
             native = None
-        rate = RESAMPLE_RATE if native is not None and native not in SAMPLE_RATES else None
-        audio = load_audio(path, sample_rate=rate, ffmpeg=self.ffmpeg, max_duration=max_duration)
-        if audio.sample_rate not in SAMPLE_RATES:
-            audio = load_audio(
-                path, sample_rate=RESAMPLE_RATE, ffmpeg=self.ffmpeg, max_duration=max_duration
-            )
-        return audio
+        rate = None if native in SAMPLE_RATES else RESAMPLE_RATE
+        return load_audio(path, sample_rate=rate, ffmpeg=self.ffmpeg, max_duration=max_duration)
 
     def transcribe_audio(self, audio: Audio, source: str | None = None) -> Transcript:
         """
@@ -133,7 +136,7 @@ class Transcriber:
         Исключения:
             AudioError: Если модель не принимает частоту записи
         """
-        tracks = self._tracks(audio)
+        tracks, channel_map = self._tracks(audio)
         cuts = cut_points([samples for _, samples in tracks], audio.sample_rate)
         segments: list[Segment] = []
         for start, end in pairwise(cuts):
@@ -151,50 +154,98 @@ class Transcriber:
             ]
         segments.sort(key=lambda segment: (segment.start, segment.channel or 0))
         return Transcript(
-            tuple(segments), audio.duration, len(tracks), self.recognizer.model, source
+            tuple(segments),
+            audio.duration,
+            len(tracks),
+            self.recognizer.model,
+            source,
+            channel_map,
         )
 
-    def _tracks(self, audio: Audio) -> list[Track]:
+    def _tracks(self, audio: Audio) -> tuple[list[Track], tuple[int | None, ...]]:
+        single: tuple[int | None, ...] = (None,) * audio.num_channels
         if not self.split_channels:
-            return [(None, audio.mono())]
+            return [(None, audio.mono())], single
+        lag = int(SAME_CHANNEL_LAG * audio.sample_rate)
         tracks: list[Track] = []
+        channel_map: list[int | None] = []
         for index in range(audio.num_channels):
             samples = audio.samples[:, index]
-            if not any(same_signal(samples, kept) for _, kept in tracks):
+            same = (channel for channel, kept in tracks if same_signal(kept, samples, lag))
+            if (match := next(same, None)) is None:
                 tracks.append((index, samples))
+                channel_map.append(index)
+            else:
+                channel_map.append(match)
         if len(tracks) == 1:
-            return [(None, tracks[0][1])]
-        return tracks
+            return [(None, tracks[0][1])], single
+        return tracks, tuple(channel_map)
 
 
-def same_signal(first: Samples, second: Samples, block: int = 1 << 20) -> bool:
+def same_signal(first: Samples, second: Samples, max_lag: int = 0, block: int = 1 << 20) -> bool:
     """
     Совпадение двух каналов
+
+    Описание:
+        Каналы совпадают, если второй - это первый с другой громкостью и сдвигом не больше
+        max_lag отсчетов: доля энергии второго канала, которую не объясняет первый,
+        не больше SAME_CHANNEL_RATIO (-30 дБ). Сдвиг ищется по LAG_FRAMES самым громким
+        частям первого канала. Каналы в противофазе не совпадают, два беззвучных совпадают
 
     Аргументы:
         first (numpy.ndarray): Отсчеты первого канала
         second (numpy.ndarray): Отсчеты второго канала той же длины
+        max_lag (int): Наибольший сдвиг, отсчеты
         block (int): Число отсчетов, которые сравниваются за раз
 
     Вывод:
-        bool: Энергия разности не больше SAME_CHANNEL_RATIO от энергии громкого канала;
-            два тихих канала совпадают
+        bool: Каналы совпадают
 
     Пример использования:
         >>> import numpy as np
         >>> from stt_ru.pipeline import same_signal
         >>> signal = np.sin(np.arange(8000, dtype=np.float32))
-        >>> same_signal(signal, signal + 0.01), same_signal(signal, -signal)
+        >>> same_signal(signal, 0.5 * signal), same_signal(signal, -signal)
         (True, False)
+        >>> same_signal(signal[3:], signal[:-3]), same_signal(signal[3:], signal[:-3], max_lag=5)
+        (False, True)
     """
-    difference = energy_first = energy_second = 0.0
+    lag = _lag(first, second, max_lag) if max_lag > 0 else 0
+    if lag >= 0:
+        first, second = first[: len(first) - lag], second[lag:]
+    else:
+        first, second = first[-lag:], second[: len(second) + lag]
+    cross = energy_first = energy_second = 0.0
     for start in range(0, len(first), block):
         a = first[start : start + block].astype(np.float64)
         b = second[start : start + block].astype(np.float64)
-        difference += float(np.square(a - b).sum())
+        cross += float(np.dot(a, b))
         energy_first += float(np.dot(a, a))
         energy_second += float(np.dot(b, b))
-    return difference <= SAME_CHANNEL_RATIO * max(energy_first, energy_second)
+    if energy_first == 0 or energy_second == 0:
+        return energy_first == energy_second
+    return cross > 0 and 1 - cross**2 / (energy_first * energy_second) <= SAME_CHANNEL_RATIO
+
+
+def _lag(first: Samples, second: Samples, max_lag: int) -> int:
+    # Сдвиг второго канала относительно первого: second[t + lag] похож на first[t]
+    frame = min(max(LAG_FRAME, 4 * max_lag), len(first))
+    if frame == 0:
+        return 0
+    starts = range(0, len(first) - frame + 1, frame)
+    loud = sorted(
+        starts,
+        key=lambda start: float(
+            np.dot(first[start : start + frame], first[start : start + frame])
+        ),
+    )
+    totals = np.zeros(2 * max_lag + 1)
+    for start in loud[-LAG_FRAMES:]:
+        low, high = start - max_lag, start + frame + max_lag
+        window = second[max(low, 0) : min(high, len(second))].astype(np.float64)
+        window = np.pad(window, (max(-low, 0), max(high - len(second), 0)))
+        totals += np.correlate(window, first[start : start + frame].astype(np.float64), "valid")
+    return int(np.argmax(totals)) - max_lag
 
 
 def cut_points(tracks: Sequence[Samples], sample_rate: int) -> list[int]:

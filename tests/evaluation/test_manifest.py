@@ -86,6 +86,17 @@ class TestCsv:
             Sample(audio / "b.mp3", "Ответ"),
         ]
 
+    def test_unquoted_delimiter_in_text(self, audio):
+        manifest = audio / "eval.csv"
+        manifest.write_text("audio,text\na.wav,Наталья, благодарю\n", encoding="utf-8")
+        with pytest.raises(ParameterError, match="строка 2: значений больше, чем колонок"):
+            load_manifest(manifest)
+
+    def test_trailing_empty_values_from_excel(self, audio):
+        manifest = audio / "eval.csv"
+        manifest.write_text("audio;text\na.wav;да, нет;;\n", encoding="utf-8")
+        assert load_manifest(manifest) == [Sample(audio / "a.wav", "да, нет")]
+
     def test_blank_rows(self, audio):
         manifest = audio / "eval.csv"
         manifest.write_text("audio,text\n , \na.wav,да\n,,,\n,\n,нет\n", encoding="utf-8")

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast, get_args
 
+import numpy as np
 import onnx_asr
 import onnxruntime as rt
 from onnx_asr.adapters import TextResultsAsrAdapter
@@ -29,6 +30,8 @@ EXCLUDED_PROVIDERS = (
     "TensorrtExecutionProvider",
     "NvTensorRTRTXExecutionProvider",
 )
+# У этих моделей нет весов int8: попытка их найти ходила бы в сеть при каждой загрузке
+WITHOUT_INT8 = frozenset({"t-tech/t-one"})
 
 Found = list[tuple[float, float, str]]
 
@@ -50,8 +53,9 @@ class Recognizer:
     Описание:
         Модель задается именем onnx-asr: gigaam-v3-e2e-rnnt (по умолчанию), gigaam-v3-rnnt,
         t-tech/t-one, alphacep/vosk-model-ru, onnx-community/whisper-large-v3-turbo и другие.
-        При первом использовании модель скачивается с Hugging Face в его кэш. Если у модели
-        нет весов с заданной квантизацией, загружаются исходные веса с предупреждением
+        При первом использовании модель скачивается с Hugging Face в его кэш, дальше
+        загружается из кэша. Если у модели нет весов int8, загружаются исходные веса
+        с предупреждением
 
     Аргументы:
         model (str): Имя модели onnx-asr
@@ -94,17 +98,7 @@ class Recognizer:
 
     def _load_all(self, quantization: str | None) -> tuple[TextResultsAsrAdapter, Vad]:
         try:
-            try:
-                asr = self._load(quantization)
-            except ModelFileNotFoundError:
-                if quantization is None:
-                    raise
-                warnings.warn(
-                    f"У модели {self.model} нет весов {quantization}, загружаются исходные веса",
-                    stacklevel=3,
-                )
-                self.quantization = None
-                asr = self._load(None)
+            asr = self._load_weights(quantization)
             silero = onnx_asr.load_vad(
                 "silero", sess_options=self._options, providers=self._providers
             )
@@ -114,6 +108,26 @@ class Recognizer:
                 f"Не удалось загрузить модель {self.model}{variant}: {error}"
             ) from error
         return asr, silero
+
+    def _load_weights(self, quantization: str | None) -> TextResultsAsrAdapter:
+        if quantization != DEFAULT_QUANTIZATION:
+            return self._load(quantization)
+        if self.model in WITHOUT_INT8:
+            return self._fall_back(quantization)
+        try:
+            return self._load(quantization)
+        except ModelFileNotFoundError:
+            if self._model_dir is not None and self._model_dir.is_dir():
+                raise
+            return self._fall_back(quantization)
+
+    def _fall_back(self, quantization: str) -> TextResultsAsrAdapter:
+        warnings.warn(
+            f"У модели {self.model} нет весов {quantization}, загружаются исходные веса",
+            stacklevel=5,
+        )
+        self.quantization = None
+        return self._load(None)
 
     def _load(self, quantization: str | None) -> TextResultsAsrAdapter:
         return onnx_asr.load_model(
@@ -145,6 +159,13 @@ class Recognizer:
                 + ", ".join(map(str, SAMPLE_RATES))
             )
         found: list[Found] = [[] for _ in waveforms]
+        # Один NaN или inf превращает в <unk> текст всей пачки фрагментов
+        waveforms = [
+            waveform
+            if np.isfinite(waveform).all()
+            else np.nan_to_num(waveform, nan=0.0, posinf=1.0, neginf=-1.0)
+            for waveform in waveforms
+        ]
         audible = [
             index
             for index, waveform in enumerate(waveforms)

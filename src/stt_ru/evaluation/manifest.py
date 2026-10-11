@@ -110,12 +110,17 @@ def _from_csv(path: Path) -> list[Sample]:
             next(reader.reader)
             samples = []
             for row in reader:
-                values = [value for name, value in row.items() if isinstance(name, str)]
-                # Строки из одних разделителей Excel оставляет под таблицей
-                if any(isinstance(value, str) and value.strip() for value in values):
-                    samples.append(
-                        _sample(path.parent, dict(row), f"{path}, строка {reader.line_num}")
+                where = f"{path}, строка {reader.line_num}"
+                # Лишние значения DictReader кладет под ключ None; пустые оставляет Excel
+                extra = row.pop(None, None) or []
+                if any(value.strip() for value in extra):
+                    raise ParameterError(
+                        f"{where}: значений больше, чем колонок - текст с разделителем "
+                        f"{delimiter!r} возьмите в кавычки"
                     )
+                # Строки из одних разделителей Excel оставляет под таблицей
+                if any(isinstance(value, str) and value.strip() for value in row.values()):
+                    samples.append(_sample(path.parent, dict(row), where))
             return samples
     except UnicodeDecodeError as error:
         raise _not_utf8(path) from error

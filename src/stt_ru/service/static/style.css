@@ -50,7 +50,9 @@ p { margin: 0 0 8px; }
 
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
-.error { color: var(--danger); margin-top: 8px; }
+/* Иначе display у классов вроде .downloads перекрывает атрибут hidden */
+[hidden] { display: none !important; }
+.error { color: var(--danger); margin-top: 8px; white-space: pre-line; }
 
 .top {
   display: flex;

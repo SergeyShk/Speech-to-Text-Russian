@@ -9,6 +9,8 @@
 *   `numpy`
 *   `soundfile`
 
+На Intel Mac и macOS старше 14 у ONNX Runtime есть сборки только до 1.23 и только для Python 3.11-3.13: Python 3.14 там не поддерживается, вместо него подойдет [Docker-образ](docker.md).
+
 ## Установка с помощью `pip`
 
 ``` bash
@@ -63,6 +65,8 @@ pip show onnxruntime | grep Version    # версия, например 1.31.0
 pip uninstall -y onnxruntime
 pip install onnxruntime-gpu==1.31.0
 ```
+
+Установка или обновление stt-ru и его дополнений (`pip install "stt-ru[service]"`, `pip install -U stt-ru`) снова ставит `onnxruntime` поверх GPU-сборки, и распознавание молча переходит на CPU. Ставьте дополнения до замены и повторяйте замену после каждого обновления.
 
 Требования сборок ONNX Runtime к драйверам и библиотекам - в [документации ONNX Runtime](https://onnxruntime.ai/docs/execution-providers/). По умолчанию (`--device auto`) stt-ru берет доступные устройства в порядке приоритета ONNX Runtime - GPU раньше CPU, - кроме CoreML и TensorRT; недоступное устройство, указанное явно, - ошибка с подсказкой, какой пакет поставить. Для NVIDIA GPU есть готовый [Docker-образ](docker.md#gpu).
 

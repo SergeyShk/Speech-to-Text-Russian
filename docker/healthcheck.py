@@ -16,7 +16,9 @@ for i, arg in enumerate(args):
         port = args[i + 1]
     elif arg.startswith("--port="):
         port = arg.removeprefix("--port=")
+# Без прокси: HTTP_PROXY в контейнере отправил бы запрос к своему же сервису на прокси
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 try:
-    urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=4)
+    opener.open(f"http://127.0.0.1:{port}/healthz", timeout=4)
 except OSError as error:
     sys.exit(f"stt-ru serve не отвечает на порте {port}: {error}")

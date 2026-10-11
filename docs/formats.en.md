@@ -103,7 +103,7 @@ Dialogue: 0,0:00:03.49,0:00:03.93,Default,Канал 0,0,0,0,,Угу
 
 ## CSV { #csv }
 
-Columns `Audio File`, `Start`, `End`, `Name`, `Text`, times in milliseconds, comma separator. The file starts with a BOM, so Excel opens Cyrillic text without any setup. The columns are the same as in the CSV of version 0.2, so spreadsheets and reports built on it keep working.
+Columns `Audio File`, `Start`, `End`, `Name`, `Text`, times in milliseconds, comma separator. The file starts with a BOM, so Excel opens Cyrillic text without any setup; CSV printed to the console has no BOM, so for Excel save it with `--output-dir` or `--summary`. The columns are the same as in the CSV of version 0.2, so spreadsheets and reports built on it keep working.
 
 ``` text
 Audio File,Start,End,Name,Text

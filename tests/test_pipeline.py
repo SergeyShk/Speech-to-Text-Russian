@@ -1,3 +1,5 @@
+import os
+import sys
 from pathlib import Path
 from typing import ClassVar
 
@@ -9,7 +11,7 @@ import soundfile as sf
 import stt_ru
 from stt_ru import Segment, Transcriber, pipeline
 from stt_ru.audio import Audio
-from stt_ru.pipeline import cut_points
+from stt_ru.pipeline import cut_points, same_signal
 from stt_ru.vad import VadOptions
 
 CALL = Path(__file__).parent / "data" / "call.wav"
@@ -39,9 +41,9 @@ def fake(monkeypatch):
 
 
 def stereo(rate=8000, seconds=1.0):
-    samples = np.zeros((int(rate * seconds), 2), dtype=np.float32)
-    samples[:, 0] = 0.25
-    samples[:, 1] = 0.75
+    count = int(rate * seconds)
+    samples = np.random.default_rng(0).normal(0, 0.05, (count, 2)).astype(np.float32)
+    samples[0] = (0.25, 0.75)
     return samples
 
 
@@ -70,6 +72,7 @@ def test_channels(fake):
     )
     assert (transcript.channels, transcript.duration) == (2, 1.0)
     assert (transcript.model, transcript.source) == ("gigaam-v3-e2e-rnnt", "call.wav")
+    assert transcript.channel_map == (0, 1)
 
 
 def test_same_start_ordered_by_channel(monkeypatch, fake):
@@ -88,6 +91,7 @@ def test_mixed_channels(fake):
     assert float(waveforms[0][0]) == 0.5
     assert {segment.channel for segment in transcript.segments} == {None}
     assert transcript.channels == 1
+    assert transcript.channel_map == (None, None)
 
 
 def test_mono(fake):
@@ -124,7 +128,7 @@ def test_different_channels_kept(fake):
 def test_tracks_are_views(fake):
     samples = stereo()
     transcriber = Transcriber()
-    tracks = transcriber._tracks(Audio(samples, 8000))
+    tracks, _ = transcriber._tracks(Audio(samples, 8000))
     assert all(np.shares_memory(track, samples) for _, track in tracks)
 
 
@@ -135,6 +139,39 @@ def test_duplicate_channel_among_others(fake):
     assert [float(w[0]) for w in waveforms] == [0.25, 0.75]
     assert transcript.channels == 2
     assert {segment.channel for segment in transcript.segments} == {0, 1}
+    assert transcript.channel_map == (0, 1, 0)
+
+
+def test_quieter_and_shifted_copy_is_same_channel(fake):
+    rng = np.random.default_rng(0)
+    signal = rng.normal(0, 0.1, 8100).astype(np.float32)
+    # Второй канал на 6 дБ тише и позже на 2 мс: стереозапись одного источника
+    samples = np.stack([signal[16:], 0.5 * signal[:-16]], axis=1)
+    transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+    assert transcript.channels == 1
+    assert transcript.channel_map == (None, None)
+
+
+class TestSameSignal:
+    def test_silent_channels(self):
+        silence = np.zeros(100, dtype=np.float32)
+        signal = np.ones(100, dtype=np.float32)
+        assert same_signal(silence, silence)
+        assert not same_signal(silence, signal)
+        assert not same_signal(signal, silence)
+
+    def test_empty(self):
+        empty = np.zeros(0, dtype=np.float32)
+        assert same_signal(empty, empty, max_lag=80)
+
+    def test_lag_found_in_loud_part(self, monkeypatch):
+        monkeypatch.setattr(pipeline, "LAG_FRAME", 256)
+        rng = np.random.default_rng(1)
+        signal = np.zeros(4096, dtype=np.float32)
+        signal[3000:3800] = rng.normal(0, 0.3, 800)
+        assert same_signal(signal[5:], signal[:-5], max_lag=8)
+        assert same_signal(signal[:-5], signal[5:], max_lag=8)
+        assert not same_signal(signal[20:], signal[:-20], max_lag=8)
 
 
 def test_empty_audio(fake):
@@ -233,13 +270,22 @@ def test_resample_unsupported_rate_once(fake, tmp_path, monkeypatch):
     assert transcript.duration == pytest.approx(1.0, abs=0.01)
 
 
-def test_resample_after_ffmpeg_decode(fake, tmp_path, monkeypatch):
+def test_ffmpeg_format_decoded_once_at_16_khz(fake, tmp_path, monkeypatch):
     path = tmp_path / "call.wav"
-    sf.write(path, stereo(rate=12000), 12000, subtype="PCM_16")
+    sf.write(path, stereo(rate=8000), 8000, subtype="PCM_16")
     monkeypatch.setattr(
         pipeline.sf, "info", lambda path: (_ for _ in ()).throw(sf.LibsndfileError(1))
     )
+    loads = []
+    load = pipeline.load_audio
+
+    def spy(*args, **kwargs):
+        loads.append(kwargs["sample_rate"])
+        return load(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "load_audio", spy)
     transcript = Transcriber(ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()).transcribe(path)
+    assert loads == [16000]
     assert fake[0].calls[0][1] == 16000
     assert transcript.duration == pytest.approx(1.0, abs=0.01)
 
@@ -258,6 +304,14 @@ def test_load(fake, tmp_path):
 def test_missing_file(fake, tmp_path):
     with pytest.raises(FileNotFoundError):
         Transcriber().transcribe(tmp_path / "missing.wav")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="именованных каналов mkfifo в Windows нет")
+def test_named_pipe_is_not_read(fake, tmp_path):
+    pipe = tmp_path / "call.wav"
+    os.mkfifo(pipe)
+    with pytest.raises(FileNotFoundError, match="Файл не найден"):
+        Transcriber().load(pipe)
 
 
 def test_package_exports():

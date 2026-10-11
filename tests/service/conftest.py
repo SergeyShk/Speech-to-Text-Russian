@@ -11,6 +11,7 @@ from stt_ru import Segment, Transcript
 from stt_ru.audio import load_audio
 from stt_ru.exceptions import AudioError
 from stt_ru.service import JobQueue
+from stt_ru.service.worker import LOCK
 
 
 class FakeTranscriber:
@@ -43,6 +44,11 @@ def wav_bytes(seconds=1.0, rate=8000):
     buffer = io.BytesIO()
     sf.write(buffer, samples, rate, format="WAV", subtype="PCM_16")
     return buffer.getvalue()
+
+
+def job_folders(jobs):
+    """Каталоги задач без служебного файла блокировки"""
+    return [path for path in jobs.directory.iterdir() if path.name != LOCK]
 
 
 def wait(jobs, job_id, statuses=("done", "failed"), timeout=10.0):

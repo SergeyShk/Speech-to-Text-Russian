@@ -135,6 +135,10 @@ class TestAudio:
         samples = stereo()[:, :1]
         assert np.array_equal(Audio(samples, 8000).mono(), samples[:, 0])
 
+    def test_channels_first_array(self):
+        with pytest.raises(AudioError, match=r"Каналов 16000, больше 64: .* транспонируйте"):
+            Audio(np.zeros((2, 16000), dtype=np.float32), 16000)
+
     def test_error_hierarchy(self):
         assert issubclass(AudioError, SttRuError)
 
@@ -233,9 +237,14 @@ class TestMaxDuration:
         with pytest.raises(AudioError, match=r"Запись длиннее 0\.25 с"):
             load_audio(pipe_flac, max_duration=0.25)
 
+    @pytest.mark.parametrize("value", [float("nan"), float("inf")])
+    def test_not_finite(self, wav, value):
+        with pytest.raises(ParameterError, match="конечным положительным числом"):
+            load_audio(wav, max_duration=value)
+
     @pytest.mark.parametrize("value", [0, -1])
     def test_wrong_value(self, wav, value):
-        with pytest.raises(ParameterError, match="должна быть положительной"):
+        with pytest.raises(ParameterError, match="должна быть конечным положительным числом"):
             load_audio(wav, max_duration=value)
 
 
@@ -302,6 +311,39 @@ class TestLoadAudio:
         path.write_bytes(b"not an audio file")
         with pytest.raises(AudioError, match="ffmpeg не прочитал файл"):
             load_audio(path, ffmpeg=FFMPEG)
+
+    def test_ffmpeg_error_is_one_line(self, tmp_path):
+        path = tmp_path / "notes.wav"
+        path.write_text("не звук", encoding="utf-8")
+        with pytest.raises(AudioError) as error:
+            load_audio(path, ffmpeg=FFMPEG)
+        assert "\n" not in str(error.value)
+        assert "@ 0x" not in str(error.value)
+
+    def test_video_without_audio(self, tmp_path):
+        path = tmp_path / "video.mp4"
+        command = [FFMPEG, "-nostdin", "-v", "error", "-f", "lavfi", "-i"]
+        command += ["color=c=black:s=16x16:d=0.2", "-c:v", "mpeg4", str(path)]
+        subprocess.run(command, check=True)
+        with pytest.raises(AudioError, match="в файле нет звуковой дорожки"):
+            load_audio(path, ffmpeg=FFMPEG)
+
+    def test_empty_file(self, tmp_path):
+        path = tmp_path / "empty.wav"
+        path.write_bytes(b"")
+        with pytest.raises(AudioError, match="Файл пуст"):
+            load_audio(path, ffmpeg=FFMPEG)
+
+    @pytest.mark.parametrize(
+        ("stderr", "message"),
+        [
+            ("[in#0 @ 0x1f2e] Error opening input: Invalid data\nError opening input file x\n",
+             "Error opening input: Invalid data"),
+            ("\n\n", "неизвестная ошибка"),
+        ],
+    )  # fmt: skip
+    def test_ffmpeg_error_text(self, stderr, message):
+        assert loader._ffmpeg_error(stderr) == message
 
     def test_ffmpeg_not_runnable(self, m4a, tmp_path):
         with pytest.raises(AudioError, match="Не удалось запустить ffmpeg"):
