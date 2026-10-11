@@ -45,8 +45,10 @@ class TestPage:
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["referrer-policy"] == "no-referrer"
         assert '<script src="/static/app.js"' in response.text
+        assert response.text.count('src="/static/icon.svg"') == 1
+        assert '<link rel="icon" href="/static/icon.svg"' in response.text
 
-    @pytest.mark.parametrize("name", ["app.js", "style.css"])
+    @pytest.mark.parametrize("name", ["app.js", "style.css", "icon.svg"])
     def test_static(self, client, name):
         response = client.get(f"/static/{name}")
         assert response.status_code == 200

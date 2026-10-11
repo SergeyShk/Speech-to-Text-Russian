@@ -64,12 +64,7 @@ p { margin: 0 0 8px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand p { margin: 0; font-size: 13px; }
 
-.logo {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, var(--speaker-0), var(--speaker-1));
-}
+.logo { width: 34px; height: 34px; }
 
 .link { color: var(--accent); text-decoration: none; }
 .link:hover { text-decoration: underline; }
