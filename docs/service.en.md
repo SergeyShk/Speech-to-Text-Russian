@@ -54,8 +54,8 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 
 *   A file larger than `--max-size` is rejected during upload (response 413) and is not written to disk.
 *   A recording longer than `--max-duration` gives a failed job; the duration is checked from the file header or while decoding, so a long recording is not read into memory entirely.
-*   If `--max-queue` files are waiting, new ones get a 503 response with `Retry-After`.
-*   Files are kept in a temporary folder under random names and deleted on request, `--keep` hours after the job finishes and when the service stops. Jobs are kept in memory and are lost on restart.
+*   If `--max-queue` files are waiting, new ones get a 503 response with `Retry-After`. An upload without the token (401) or into a full queue is refused before the file is sent.
+*   Files are kept in a temporary folder under random names and deleted on request, `--keep` hours after the job finishes and when the service stops. Jobs are kept in memory and are lost on restart; the files of a run that crashed (`kill -9`, out of memory) are deleted on the next start with the same folder (except on Windows).
 
 ## REST API { #api }
 
@@ -65,7 +65,7 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/jobs/{id}` | Job state |
 | `GET /v1/jobs/{id}/result?format=srt` | Result in a format (`json` by default) with the file name in `Content-Disposition` |
 | `GET /v1/jobs/{id}/waveform` | Waveform peaks per channel |
-| `GET /v1/jobs/{id}/audio` | The uploaded file, with seeking support (`Range`) |
+| `GET /v1/jobs/{id}/audio` | The uploaded file, with seeking support (`Range`): audio and video for the player, anything else as an attachment |
 | `DELETE /v1/jobs/{id}` | Deletes the job and its files |
 | `GET /v1/info` | Version, model, limits, formats, whether a token is required |
 | `GET /healthz` | Health check: `{"status": "ok"}` |

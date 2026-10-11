@@ -5,7 +5,7 @@
 
 ## Description
 
-The command recognizes speech in files and folders. Without `--output-dir` it prints the result to the console; with it, it saves the result of every file in the chosen [formats](formats.md). The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker, "Канал 0" and "Канал 1" (Channel 0 and Channel 1). Identical channels are recognized once; `--mono` mixes the channels into one.
+The command recognizes speech in files and folders. Without `--output-dir` it prints the result to the console; with it, it saves the result of every file in the chosen [formats](formats.md). The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker, "Канал 0" and "Канал 1" (Channel 0 and Channel 1). Channels that differ only in loudness and a small delay are recognized once. Mix a stereo recording of one source (a lecture or dictation on a stereo microphone) into one channel with `--mono`: otherwise every phrase comes out twice.
 
 ``` bash
 stt-ru transcribe call.wav                              # text to the console
@@ -24,9 +24,9 @@ stt-ru transcribe calls/ -o out/ --watch --delete-source    # folder monitoring
 
 ## Result { #output }
 
-**Without `--output-dir`** the result is printed in one format, txt by default. For several files in a row, txt is printed with a `==> file <==` header before each file, and jsonl and csv with a single header; other formats are printed only for one file. Output to a file or a pipe is always UTF-8.
+**Without `--output-dir`** the result is printed in one format, txt by default. For several files in a row, txt is printed with a `==> file <==` header before each file, and jsonl and csv with a single header and the file path as given in the arguments; other formats are printed only for one file. Output to a file or a pipe is always UTF-8.
 
-**With `--output-dir`** the result of every file is saved in the `--formats` formats (txt, srt and json by default) under the file name: `calls/2026/a.wav` from the `calls` folder gives `out/2026/a.txt`, `out/2026/a.srt` and `out/2026/a.json`. Each result file is written entirely or not at all. A file that already has all its results is skipped: running again resumes an interrupted batch, and `--overwrite` transcribes such files again. Two files with the same result path (ignoring case) are an error before any work starts.
+**With `--output-dir`** the result of every file is saved in the `--formats` formats (txt, srt and json by default) under the file name: `calls/2026/a.wav` from the `calls` folder gives `out/2026/a.txt`, `out/2026/a.srt` and `out/2026/a.json`. Each result file is written entirely or not at all. A file that already has all its results is skipped: running again resumes an interrupted batch, and `--overwrite` transcribes such files again. Two files with the same result path (ignoring case) are an error before any work starts, and so with `--summary`; if the result is only printed, such files are transcribed.
 
 **`--summary`** collects the segments of all files transcribed in this run into one CSV or JSONL file with the file path in the first column. If the summary file exists, rows are appended, and the CSV header is written once.
 
@@ -47,15 +47,17 @@ stt-ru transcribe calls/ -o out/ --watch --delete-source    # folder monitoring
 | `--min-age` | `10` | How many seconds a file must stay unchanged to be taken |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
-The model, device and speech detection parameters (`-m`, `--quantization`, `--model-dir`, `--device`, `--mono`, `--ffmpeg`, `--vad-*`) are shared by all commands and described on the [Models](models.md#options) page. All parameters and files are checked before the model is loaded; if there are no files, the model is not loaded.
+The model, device and speech detection parameters (`-m`, `--quantization`, `--model-dir`, `--device`, `--mono`, `--ffmpeg`, `--vad-*`) are shared by all commands and described on the [Models](models.md#options) page. All parameters and files are checked before the model is loaded, including that the output folder and the summary file can be written and the folders with recordings can be read. If there are no files, the model is not loaded.
 
 ## Deleting sources { #delete-source }
 
-`--delete-source` deletes a file after all its results and summary rows are written. It needs `--output-dir` or `--summary`, so that the result is not lost. A file that already has results is not deleted: it may be another recording with the same name. A failed deletion is an error of that file.
+`--delete-source` deletes a file after all its results and summary rows are written. It needs `--output-dir` or `--summary`, so that the result is not lost. A file that already has results is not deleted: it may be another recording with the same name. A file that changed while it was being transcribed (it is still being copied) is not deleted either. A failed deletion or a changed file is an error of that file.
 
 ## Folder monitoring { #watch }
 
-`--watch` scans the folders every `--interval` seconds and takes a file when it has not changed for `--min-age` seconds: this way a recording that is still being copied is not transcribed. It needs `--output-dir`, and the paths must be folders. A failed file is retried only after it changes. A missing folder and files with the same result names do not stop monitoring: a message is printed about them. Monitoring runs until Ctrl+C.
+`--watch` scans the folders every `--interval` seconds and takes a file when it has not changed for `--min-age` seconds and a WAV file holds as much data as its header says: this way a recording that is still being copied is not transcribed. It needs `--output-dir`, and the paths must be folders. New files do not wait for long files of earlier scans: `-j` files are transcribed at a time.
+
+A file that changed after it was transcribed is transcribed again: its results are overwritten and its rows are appended to the summary file once more. A file that failed to transcribe is retried only after it changes; if its results could not be written (the summary file is open in Excel, the disk is full), the file is retried in the next scan. A missing or unreadable folder and files with the same result names do not stop monitoring, including on restart: a message is printed about them. Monitoring runs until Ctrl+C.
 
 ``` bash
 stt-ru transcribe /archive/wav -r -o /archive/out -f csv,ass --summary /archive/out/all.csv --watch --delete-source

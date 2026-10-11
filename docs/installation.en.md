@@ -9,6 +9,8 @@ The library and the `stt-ru` command can be installed with `pip` or from the pro
 *   `numpy`
 *   `soundfile`
 
+On Intel Macs and macOS older than 14, ONNX Runtime has builds only up to 1.23 and only for Python 3.11-3.13: Python 3.14 is not supported there, and the [Docker image](docker.md) works instead.
+
 ## Installing with `pip`
 
 ``` bash
@@ -63,6 +65,8 @@ pip show onnxruntime | grep Version    # the version, for example 1.31.0
 pip uninstall -y onnxruntime
 pip install onnxruntime-gpu==1.31.0
 ```
+
+Installing or updating stt-ru and its extras (`pip install "stt-ru[service]"`, `pip install -U stt-ru`) installs `onnxruntime` over the GPU build again, and recognition silently falls back to the CPU. Install the extras before the replacement and repeat the replacement after every update.
 
 The driver and library requirements of ONNX Runtime builds are in the [ONNX Runtime documentation](https://onnxruntime.ai/docs/execution-providers/). By default (`--device auto`) stt-ru takes the available devices in the ONNX Runtime priority order - GPU before CPU - except CoreML and TensorRT; an unavailable device requested explicitly is an error that says which package to install. There is a ready-made [Docker image](docker.md#gpu) for NVIDIA GPUs.
 

@@ -53,7 +53,7 @@ On the first run the model (about 230 MB) is downloaded from Hugging Face. More 
 ## How it works
 
 1.  The file is read entirely: WAV, FLAC, OGG, MP3 and other uncompressed formats by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.
-2.  The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Identical channels are recognized once.
+2.  The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Channels that differ only in loudness and a small delay are recognized once.
 3.  [Silero VAD](models.md#vad) speech detection cuts the recording into speech segments of at most 20 s, and the model recognizes each segment.
 4.  The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.
 

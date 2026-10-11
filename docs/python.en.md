@@ -48,6 +48,7 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 | `channels` | int | Number of recognized channels: 1 if the channels are mixed or identical |
 | `model` | str | Recognition model |
 | `source` | str | Recording file name; `None` - the recording is not from a file |
+| `channel_map` | tuple[int \| None, ...] | For every channel of the recording, the channel its speech was recognized under: its own, the one it matched, or `None` if there is one track |
 | `text` | str | Text of all segments joined with spaces |
 
 `save(path, fmt=None)` saves the result in the [format](formats.md) given by the file extension or `fmt`.
