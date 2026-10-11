@@ -8,12 +8,14 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /src
-COPY pyproject.toml uv.lock README.md LICENSE.txt ./
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-default-groups --no-install-project --extra service --extra ffmpeg
+    uv sync --locked --no-default-groups --no-install-project \
+        --extra service --extra ffmpeg --extra eval
+COPY README.md LICENSE.txt ./
 COPY src src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-default-groups --no-editable --extra service --extra ffmpeg
+    uv sync --locked --no-default-groups --no-editable --extra service --extra ffmpeg --extra eval
 
 FROM python:3.12-slim
 ARG MODEL=gigaam-v3-e2e-rnnt
@@ -33,7 +35,8 @@ WORKDIR /data
 EXPOSE 8000
 # SIGINT, а не SIGTERM: так останавливаются без потерь и сервис, и пакетное распознавание
 STOPSIGNAL SIGINT
+COPY docker/healthcheck.py /opt/stt-ru/healthcheck.py
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=2s \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
+    CMD ["python", "/opt/stt-ru/healthcheck.py"]
 ENTRYPOINT ["stt-ru"]
 CMD ["serve", "--host", "0.0.0.0"]

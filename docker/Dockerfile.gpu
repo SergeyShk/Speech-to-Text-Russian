@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Образ stt-ru для NVIDIA GPU: docker build -f docker/Dockerfile.gpu -t stt-ru:gpu .
-# Нужны драйвер NVIDIA 580 или новее и NVIDIA Container Toolkit на хосте
+# Нужны GPU NVIDIA поколения Turing (compute capability 7.5) или новее, драйвер 580 или новее
+# и NVIDIA Container Toolkit на хосте: CUDA 13 не поддерживает Maxwell, Pascal и Volta
 
 FROM ubuntu:24.04 AS build
 RUN apt-get update \
@@ -13,13 +14,15 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /src
-COPY pyproject.toml uv.lock README.md LICENSE.txt ./
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-default-groups --no-install-project --extra service --extra ffmpeg
+    uv sync --locked --no-default-groups --no-install-project \
+        --extra service --extra ffmpeg --extra eval
+COPY README.md LICENSE.txt ./
 COPY src src
 # onnxruntime-gpu той же версии, что onnxruntime из uv.lock; оба ставят модуль onnxruntime
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-default-groups --no-editable --extra service --extra ffmpeg \
+    uv sync --locked --no-default-groups --no-editable --extra service --extra ffmpeg --extra eval \
     && version="$(/opt/venv/bin/python -c "import importlib.metadata as m; print(m.version('onnxruntime'))")" \
     && uv pip uninstall --python /opt/venv/bin/python onnxruntime \
     && uv pip install --python /opt/venv/bin/python "onnxruntime-gpu==$version"
@@ -47,7 +50,8 @@ RUN if [ -n "$MODEL" ]; then \
 WORKDIR /data
 EXPOSE 8000
 STOPSIGNAL SIGINT
+COPY docker/healthcheck.py /opt/stt-ru/healthcheck.py
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=2s \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
+    CMD ["python", "/opt/stt-ru/healthcheck.py"]
 ENTRYPOINT ["stt-ru"]
 CMD ["serve", "--host", "0.0.0.0"]

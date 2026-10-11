@@ -46,6 +46,8 @@ def fake(monkeypatch):
         recognizer.rt,
         "get_available_providers",
         lambda: [
+            "TensorrtExecutionProvider",
+            "NvTensorRTRTXExecutionProvider",
             "CoreMLExecutionProvider",
             "AzureExecutionProvider",
             "CUDAExecutionProvider",
@@ -71,6 +73,20 @@ def test_defaults(fake):
 
 def test_default_providers(fake):
     assert recognizer.default_providers() == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+
+def test_load_output_goes_to_stderr(fake, monkeypatch, capsys):
+    adapter, _ = fake
+
+    def load_model(model, path=None, **kwargs):
+        print("EP Error: libnvinfer.so.10: cannot open shared object file")
+        return adapter
+
+    monkeypatch.setattr(recognizer.onnx_asr, "load_model", load_model)
+    Recognizer()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "EP Error" in captured.err
 
 
 def test_arguments(fake, tmp_path):

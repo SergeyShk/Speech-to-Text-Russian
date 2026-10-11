@@ -5,4 +5,5 @@
 !README.md
 !LICENSE.txt
 !src/
+!docker/healthcheck.py
 **/__pycache__

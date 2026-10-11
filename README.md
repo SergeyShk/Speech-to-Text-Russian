@@ -54,7 +54,9 @@ docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe call.wav  # 
 docker compose -f docker/compose.yaml up -d                                   # сервис через Compose
 ```
 
-Для NVIDIA GPU - образ `ghcr.io/sergeyshk/stt-ru:latest-gpu` и `docker/compose.gpu.yaml`. Собрать образ из репозитория: `make docker` или `make docker-gpu`.
+В контейнере команды работают от пользователя с uid 1000; чтобы сохранять результаты (`-o`) в смонтированный каталог другого пользователя, добавьте `--user "$(id -u):$(id -g)"`.
+
+Для NVIDIA GPU - образ `ghcr.io/sergeyshk/stt-ru:latest-gpu` и `docker/compose.gpu.yaml`: нужны GPU поколения Turing или новее, драйвер NVIDIA 580 или новее и NVIDIA Container Toolkit. Собрать образ из репозитория: `make docker` или `make docker-gpu`.
 
 ## Лицензия
 

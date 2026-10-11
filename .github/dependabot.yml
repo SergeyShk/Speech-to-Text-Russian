@@ -23,3 +23,9 @@ updates:
     schedule:
       interval: "monthly"
     labels: ["dependencies"]
+    ignore:
+      # Новая CUDA требует более нового драйвера NVIDIA на хосте; ее версия - под onnxruntime-gpu
+      - dependency-name: "nvidia/cuda"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "ubuntu"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

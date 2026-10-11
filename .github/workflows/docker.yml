@@ -2,13 +2,17 @@ name: docker
 
 on:
   pull_request:
-    paths:
+    paths: &paths
       - "src/**"
       - "docker/**"
       - ".dockerignore"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/docker.yml"
+  # Сборка на master наполняет кэш слоев, доступный следующим PR
+  push:
+    branches: [master]
+    paths: *paths
   release:
     types: [published]
   workflow_dispatch:
@@ -22,7 +26,12 @@ env:
 jobs:
   cpu:
     if: github.event_name != 'release'
-    runs-on: ubuntu-latest
+    name: cpu (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -35,14 +44,19 @@ jobs:
           file: docker/Dockerfile
           load: true
           tags: stt-ru:test
-          cache-from: type=gha,scope=cpu
-          cache-to: type=gha,mode=max,scope=cpu
+          cache-from: type=gha,scope=cpu-${{ matrix.runner }}
+          cache-to: type=gha,mode=max,scope=cpu-${{ matrix.runner }}
       - name: Check commands
         run: |
           docker run --rm stt-ru:test --version
           test "$(docker run --rm --entrypoint id stt-ru:test -u)" = 1000
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -q | tee out.txt
           grep -F "Канал 1: Наталья, благодарю вас за ожидание." out.txt
+          docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -f json -q | jq -e '.segments | length == 5'
+          mkdir eval && cp tests/data/call.wav eval/
+          printf 'audio,text,channel\ncall.wav,Угу. Угу. До свидания.,0\n' > eval/eval.csv
+          docker run --rm --network none -v "$PWD/eval:/data:ro" stt-ru:test evaluate eval.csv -q | tee eval.txt
+          grep -E "^gigaam-v3-e2e-rnnt +0\.0 +0\.0 " eval.txt
       - name: Check service
         run: |
           docker run -d --name stt -p 8000:8000 -e STT_RU_TOKEN=secret stt-ru:test
@@ -60,6 +74,15 @@ jobs:
           curl -sf -H "$auth" "http://127.0.0.1:8000/v1/jobs/$job/result?format=srt" | grep -F "Наталья"
           time docker stop stt
           docker logs stt
+      - name: Check health of other commands
+        run: |
+          docker run -d --name watch -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe /data -o /tmp/out --watch
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' watch)" = healthy ] && break
+            sleep 2
+          done
+          docker inspect -f '{{.State.Health.Status}}' watch | grep -x healthy
+          docker stop watch
       - name: Check compose files
         run: docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml config --quiet
 
@@ -78,7 +101,13 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.gpu
+          load: true
           tags: stt-ru:gpu
+      # GPU в CI нет: образ распознает на CPU, а stdout остается чистым результатом
+      - name: Check commands without GPU
+        run: |
+          docker run --rm stt-ru:gpu --version
+          docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:gpu transcribe call.wav -f json -q | jq -e '.segments | length == 5'
 
   publish:
     if: github.event_name == 'release'

@@ -8,9 +8,4 @@ services:
     environment:
       # Токен - из переменной окружения или файла .env рядом с compose.yaml; пустой - без токена
       STT_RU_TOKEN: ${STT_RU_TOKEN:-}
-    volumes:
-      - models:/opt/huggingface
     restart: unless-stopped
-
-volumes:
-  models:
