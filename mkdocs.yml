@@ -6,7 +6,16 @@ repo_url: https://github.com/SergeyShk/Speech-to-Text-Russian
 nav:
     - Главная:
       - О проекте: index.md
+      - Установка: installation.md
       - Авторы: authors.md
+    - Распознавание:
+      - Команда transcribe: transcribe.md
+      - Библиотека Python: python.md
+      - Форматы результата: formats.md
+    - Модели: models.md
+    - Оценка качества: evaluation.md
+    - Веб-сервис: service.md
+    - Docker: docker.md
 
 theme:
   name: material
@@ -41,7 +50,15 @@ plugins:
           nav_translations:
             Главная: Home
             О проекте: About
+            Установка: Installation
             Авторы: Authors
+            Распознавание: Transcription
+            Команда transcribe: The transcribe command
+            Библиотека Python: Python library
+            Форматы результата: Output formats
+            Модели: Models
+            Оценка качества: Quality evaluation
+            Веб-сервис: Web service
 
 extra:
   social:
