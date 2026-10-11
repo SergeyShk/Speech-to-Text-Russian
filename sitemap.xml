@@ -15,6 +15,62 @@
         <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/authors/"/>
     </url>
     <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/docker/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/docker/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/docker/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/evaluation/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/evaluation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/evaluation/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/formats/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/formats/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/formats/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/installation/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/installation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/installation/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/models/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/models/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/models/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/python/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/python/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/python/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/service/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/service/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/service/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/transcribe/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/transcribe/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/transcribe/"/>
+    </url>
+    <url>
         <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/</loc>
         <lastmod>2026-10-11</lastmod>
         <changefreq>daily</changefreq>
@@ -27,5 +83,61 @@
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/authors/"/>
         <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/authors/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/docker/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/docker/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/docker/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/evaluation/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/evaluation/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/evaluation/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/formats/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/formats/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/formats/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/installation/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/installation/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/installation/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/models/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/models/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/models/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/python/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/python/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/python/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/service/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/service/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/service/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/transcribe/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/transcribe/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/transcribe/"/>
     </url>
 </urlset>
