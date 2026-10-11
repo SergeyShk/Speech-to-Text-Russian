@@ -110,25 +110,26 @@ def find_jobs(
     Аргументы:
         paths (list[str]): Файлы и каталоги
         recursive (bool): Искать файлы и во вложенных каталогах
-        strict (bool): Отсутствующий или недоступный путь и совпадение имен результатов -
-            ошибка; False - они пропускаются с сообщением в log
+        strict (bool): Отсутствующий или недоступный путь из аргументов и совпадение имен
+            результатов - ошибка; False - они пропускаются с сообщением в log
         names (bool): Проверять совпадение имен результатов; False - когда результаты
             не сохраняются в каталог
-        log (Callable[[str], None]): Сообщения о пропущенных путях и файлах при strict=False
+        log (Callable[[str], None]): Сообщения о недоступных вложенных каталогах, а при
+            strict=False - и о пропущенных путях и файлах
 
     Вывод:
         list[Job]: Файлы в порядке аргументов, внутри каталога - по пути
 
     Исключения:
         FileNotFoundError: Если пути нет и strict=True
-        PermissionError: Если путь или вложенный каталог недоступен и strict=True
+        PermissionError: Если путь из аргументов недоступен и strict=True
         ParameterError: Если у двух файлов совпадают имена результатов и strict=True
     """
     jobs: list[Job] = []
     for item in map(Path, paths):
         try:
             if item.is_dir():
-                jobs += _directory_jobs(item, recursive)
+                jobs += _directory_jobs(item, recursive, log)
             elif item.is_file():
                 jobs.append(Job(item, Path(item.stem), item.name))
             else:
@@ -157,7 +158,7 @@ def find_jobs(
     return result
 
 
-def _directory_jobs(directory: Path, recursive: bool) -> list[Job]:
+def _directory_jobs(directory: Path, recursive: bool, log: Log) -> list[Job]:
     jobs = []
     denied: list[OSError] = []
     # os.walk, в отличие от glob, сообщает о каталогах, которые не удалось прочитать
@@ -170,9 +171,12 @@ def _directory_jobs(directory: Path, recursive: bool) -> list[Job]:
             if file.is_file():
                 relative = file.relative_to(directory)
                 jobs.append(Job(file, relative.with_suffix(""), relative.as_posix()))
-    if denied:
-        raise PermissionError(f"Нет доступа к каталогу: {denied[0].filename}")
-    return sorted(jobs, key=lambda job: job.name.parts)
+    for error in denied:
+        # Недоступен сам каталог из аргументов - ошибка; вложенный пропускается
+        if Path(error.filename) == directory:
+            raise PermissionError(f"Нет доступа к каталогу: {directory}")
+        log(f"Нет доступа к каталогу: {error.filename}")
+    return sorted(jobs, key=lambda job: job.source.relative_to(directory).parts)
 
 
 def check_options(
@@ -209,24 +213,26 @@ def check_options(
             raise ParameterError("Для каталога результатов нужен хотя бы один формат")
         check_target(output_dir, directory=True)
     if summary is not None:
-        check_target(summary, directory=False)
+        check_target(summary, directory=False, append=True)
 
 
-def check_target(path: str | os.PathLike[str], *, directory: bool) -> None:
+def check_target(path: str | os.PathLike[str], *, directory: bool, append: bool = False) -> None:
     """
     Проверка, что файл или каталог результата можно записать
 
     Описание:
         Путь должен быть каталогом (directory=True) или не быть каталогом, а ближайший
         существующий каталог на пути - доступен на запись: недостающие каталоги
-        создаются при записи
+        создаются при записи. Файл, который дописывается (append=True), если он есть,
+        должен быть доступен на запись сам
 
     Аргументы:
         path (str): Путь к файлу или каталогу
         directory (bool): Путь - каталог
+        append (bool): Файл дописывается, а не заменяется
 
     Исключения:
-        ParameterError: Если путь пуст, не того вида или каталог недоступен на запись
+        ParameterError: Если путь пуст, не того вида или недоступен на запись
     """
     if not os.fspath(path):
         raise ParameterError("Путь результата не задан")
@@ -236,6 +242,10 @@ def check_target(path: str | os.PathLike[str], *, directory: bool) -> None:
             f"{target} - {'файл' if directory else 'каталог'}, а нужен "
             f"{'каталог' if directory else 'файл'}"
         )
+    if append and target.is_file():
+        if not os.access(target, os.W_OK):
+            raise ParameterError(f"Нет права записи в файл {target}")
+        return
     folder = target if directory else target.parent
     while not folder.exists() and folder != folder.parent:
         folder = folder.parent
@@ -475,7 +485,8 @@ def watch(
     Описание:
         Каталоги просматриваются каждые interval секунд; файл берется в работу, когда
         не менялся min_age секунд, а в WAV - когда данных столько, сколько указано
-        в заголовке. Новые файлы ставятся в очередь, не дожидаясь файлов прошлых
+        в заголовке (о недописанном WAV пишется сообщение). Новые файлы ставятся
+        в очередь, не дожидаясь файлов прошлых
         просмотров; одновременно распознается batch.workers файлов, результаты
         сохраняются в начале следующего просмотра. Файл, который изменился после
         распознавания, распознается заново с перезаписью результатов (строки общего
@@ -540,6 +551,8 @@ class _Watch:
         self.total = WatchReport()
         # Сигнатура файла при последней попытке: изменившийся файл берется снова
         self.attempts: dict[Path, Signature] = {}
+        # Файлы, результаты которых при повторе надо перезаписать
+        self.forced: set[Path] = set()
         self.running: dict[Future[Result], Job] = {}
         self.active: set[str] = set()
         self.finished = 0
@@ -555,7 +568,9 @@ class _Watch:
                 self.total.failed.pop(path, None)
             self.total.failed.update(report.failed)
             for path in report.unsaved:
+                # Повтор с перезаписью: на диске могут быть результаты прошлой версии файла
                 self.attempts.pop(path, None)
+                self.forced.add(path)
 
     def scan(
         self,
@@ -570,10 +585,6 @@ class _Watch:
         except OSError as error:
             messages.append(f"Не удалось просмотреть каталоги: {error}")
             jobs = []
-        for message in messages:
-            if message not in self.active:
-                self.batch.errors(message)
-        self.active = set(messages)
         roots = [Path(directory) for directory in directories if Path(directory).is_dir()]
         present = {job.source for job in jobs}
         self.attempts = {
@@ -591,15 +602,25 @@ class _Watch:
             if job in busy or signature is None or now - signature[0] < min_age:
                 continue
             previous = self.attempts.get(job.source)
-            if previous == signature or not _complete(job.source):
+            if previous == signature:
+                continue
+            if not _complete(job.source):
+                messages.append(
+                    f"{job.source}: в WAV меньше данных, чем в заголовке, ждет дописывания"
+                )
                 continue
             self.attempts[job.source] = signature
             # Файл изменился после попытки: прежние результаты могли быть по его части
-            force = {job.source} if previous is not None else set()
-            if self.batch._skip(job, Report(), force):
+            forced = previous is not None or job.source in self.forced
+            self.forced.discard(job.source)
+            if self.batch._skip(job, Report(), {job.source} if forced else set()):
                 self.total.skipped += 1
             else:
                 ready.append(job)
+        for message in messages:
+            if message not in self.active:
+                self.batch.errors(message)
+        self.active = set(messages)
         return ready
 
 
@@ -635,7 +656,16 @@ def _complete(path: Path) -> bool:
 
 
 def _gone(path: Path, present: set[Path], roots: Sequence[Path]) -> bool:
-    return path not in present and any(path.is_relative_to(root) for root in roots)
+    if path in present or not any(path.is_relative_to(root) for root in roots):
+        return False
+    # Файл под недоступным каталогом не пропал: его попытка нужна, когда доступ вернется
+    try:
+        path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return True
+    except OSError:
+        return False
+    return False
 
 
 def check_watch(interval: float, min_age: float) -> None:

@@ -1028,15 +1028,42 @@ class TestTranscribeChecks:
     @pytest.mark.skipif(
         sys.platform == "win32" or os.geteuid() == 0, reason="права каталогов POSIX"
     )
-    def test_unreadable_directory(self, fake, files, tmp_path, capsys):
+    def test_unreadable_subdirectory(self, fake, files, tmp_path, capsys):
         locked = files / "locked"
         locked.mkdir()
         locked.chmod(0)
+        out = tmp_path / "out"
         try:
-            assert run(["transcribe", str(files), "-r", "-o", str(tmp_path / "out")]) == 2
+            assert run(["transcribe", str(files), "-r", "-o", str(out), "-f", "txt", "-q"]) == 1
         finally:
             locked.chmod(0o755)
-        assert f"Нет доступа к каталогу: {locked}" in capsys.readouterr().err
+        assert f"stt-ru: ошибка: Нет доступа к каталогу: {locked}" in capsys.readouterr().err
+        assert sorted(path.name for path in out.iterdir()) == ["a.txt", "b.txt"]
+
+    @pytest.mark.skipif(
+        sys.platform == "win32" or os.geteuid() == 0, reason="права каталогов POSIX"
+    )
+    def test_unreadable_subdirectory_only(self, fake, tmp_path, capsys):
+        locked = tmp_path / "in" / "locked"
+        locked.mkdir(parents=True)
+        locked.chmod(0)
+        try:
+            assert run(["transcribe", str(tmp_path / "in"), "-r"]) == 1
+        finally:
+            locked.chmod(0o755)
+        assert "Файлов для распознавания нет" in capsys.readouterr().err
+        assert fake == []
+
+    @pytest.mark.skipif(
+        sys.platform == "win32" or os.geteuid() == 0, reason="права каталогов POSIX"
+    )
+    def test_unreadable_argument(self, fake, files, capsys):
+        files.chmod(0)
+        try:
+            assert run(["transcribe", str(files)]) == 2
+        finally:
+            files.chmod(0o755)
+        assert f"Нет доступа к каталогу: {files}" in capsys.readouterr().err
         assert fake == []
 
     def test_watch_starts_with_name_conflicts(self, fake, files, tmp_path, monkeypatch):

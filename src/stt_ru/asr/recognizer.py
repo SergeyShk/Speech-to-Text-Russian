@@ -30,6 +30,8 @@ EXCLUDED_PROVIDERS = (
     "TensorrtExecutionProvider",
     "NvTensorRTRTXExecutionProvider",
 )
+# У этих моделей нет весов int8: попытка их найти ходила бы в сеть при каждой загрузке
+WITHOUT_INT8 = frozenset({"t-tech/t-one"})
 
 Found = list[tuple[float, float, str]]
 
@@ -51,9 +53,9 @@ class Recognizer:
     Описание:
         Модель задается именем onnx-asr: gigaam-v3-e2e-rnnt (по умолчанию), gigaam-v3-rnnt,
         t-tech/t-one, alphacep/vosk-model-ru, onnx-community/whisper-large-v3-turbo и другие.
-        При первом использовании модель скачивается с Hugging Face в его кэш; модель, файлы
-        которой уже в кэше или в model_dir, загружается без обращения к сети. Если у модели
-        нет весов int8, загружаются исходные веса с предупреждением
+        При первом использовании модель скачивается с Hugging Face в его кэш, дальше
+        загружается из кэша. Если у модели нет весов int8, загружаются исходные веса
+        с предупреждением
 
     Аргументы:
         model (str): Имя модели onnx-asr
@@ -110,8 +112,7 @@ class Recognizer:
     def _load_weights(self, quantization: str | None) -> TextResultsAsrAdapter:
         if quantization != DEFAULT_QUANTIZATION:
             return self._load(quantization)
-        # Без весов int8 в кэше onnx-asr пошел бы за ними в сеть, а исходные веса уже есть
-        if not self._cached(quantization) and self._cached(None):
+        if self.model in WITHOUT_INT8:
             return self._fall_back(quantization)
         try:
             return self._load(quantization)
@@ -127,16 +128,6 @@ class Recognizer:
         )
         self.quantization = None
         return self._load(None)
-
-    def _cached(self, quantization: str | None) -> bool:
-        try:
-            from onnx_asr.loader import create_asr_resolver
-
-            resolver = create_asr_resolver(self.model, self._model_dir, offline=True)
-            resolver.resolve_model(quantization=quantization)
-        except Exception:
-            return False
-        return True
 
     def _load(self, quantization: str | None) -> TextResultsAsrAdapter:
         return onnx_asr.load_model(

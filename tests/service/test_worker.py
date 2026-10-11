@@ -1,4 +1,5 @@
 import io
+import os
 import sys
 import threading
 
@@ -286,6 +287,18 @@ class TestStaleDirectories:
         jobs.close()
         assert not crashed.exists()
         assert messages == ["Удалены файлы прошлых запусков, завершившихся аварийно: 1"]
+
+    @pytest.mark.skipif(sys.platform != "win32" and os.geteuid() == 0, reason="root читает все")
+    def test_unreadable_foreign_directory(self, transcriber, tmp_path):
+        foreign = tmp_path / "stt-ru-other"
+        foreign.mkdir()
+        foreign.chmod(0)
+        try:
+            jobs = JobQueue(transcriber, tmp_path)
+            jobs.close()
+        finally:
+            foreign.chmod(0o755)
+        assert foreign.is_dir()
 
     def test_running_and_foreign_kept(self, transcriber, tmp_path):
         foreign = tmp_path / "stt-ru-foreign"

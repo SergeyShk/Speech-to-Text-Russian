@@ -47,7 +47,7 @@ stt-ru transcribe calls/ -o out/ --watch --delete-source    # folder monitoring
 | `--min-age` | `10` | How many seconds a file must stay unchanged to be taken |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
-The model, device and speech detection parameters (`-m`, `--quantization`, `--model-dir`, `--device`, `--mono`, `--ffmpeg`, `--vad-*`) are shared by all commands and described on the [Models](models.md#options) page. All parameters and files are checked before the model is loaded, including that the output folder and the summary file can be written and the folders with recordings can be read. If there are no files, the model is not loaded.
+The model, device and speech detection parameters (`-m`, `--quantization`, `--model-dir`, `--device`, `--mono`, `--ffmpeg`, `--vad-*`) are shared by all commands and described on the [Models](models.md#options) page. All parameters and files are checked before the model is loaded, including that the output folder and the summary file can be written and the folders given as arguments can be read. An unreadable subfolder is skipped with a message, and the exit code is then 1. If there are no files, the model is not loaded.
 
 ## Deleting sources { #delete-source }
 
@@ -55,7 +55,7 @@ The model, device and speech detection parameters (`-m`, `--quantization`, `--mo
 
 ## Folder monitoring { #watch }
 
-`--watch` scans the folders every `--interval` seconds and takes a file when it has not changed for `--min-age` seconds and a WAV file holds as much data as its header says: this way a recording that is still being copied is not transcribed. It needs `--output-dir`, and the paths must be folders. New files do not wait for long files of earlier scans: `-j` files are transcribed at a time.
+`--watch` scans the folders every `--interval` seconds and takes a file when it has not changed for `--min-age` seconds and a WAV file holds as much data as its header says: this way a recording that is still being copied is not transcribed. A message is printed about an incomplete WAV file while it waits. It needs `--output-dir`, and the paths must be folders. New files do not wait for long files of earlier scans: `-j` files are transcribed at a time.
 
 A file that changed after it was transcribed is transcribed again: its results are overwritten and its rows are appended to the summary file once more. A file that failed to transcribe is retried only after it changes; if its results could not be written (the summary file is open in Excel, the disk is full), the file is retried in the next scan. A missing or unreadable folder and files with the same result names do not stop monitoring, including on restart: a message is printed about them. Monitoring runs until Ctrl+C.
 

@@ -449,23 +449,17 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
             check_watch(args.interval, args.min_age)
         vad = _vad_options(args)
         if args.output_dir is None:
-            if sys.stdout is None:
-                print("stt-ru: ошибка: вывод закрыт", file=sys.stderr)
-                sys.exit(1)
-            if len(formats) != 1:
-                parser.error("без --output-dir печатается один формат")
-            if args.watch:
-                parser.error("для --watch нужен --output-dir")
-            if args.delete_source and args.summary is None:
-                parser.error("для --delete-source нужен --output-dir или --summary")
+            _check_printing(parser, args, formats)
         if args.watch and not all(Path(path).is_dir() for path in args.paths):
             parser.error("--watch следит только за каталогами")
         # О недоступных каталогах и совпадениях имен сообщает мониторинг: перезапуск не падает
+        denied: list[str] = []
         jobs = find_jobs(
             args.paths,
             args.recursive,
             strict=not args.watch,
             names=args.output_dir is not None or args.summary is not None,
+            log=denied.append,
         )
         if args.output_dir is None and len(jobs) > 1 and formats[0] not in STREAM_FORMATS:
             parser.error(
@@ -475,8 +469,15 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
         providers = _providers(parser, args.device)
     except (OSError, ParameterError) as error:
         parser.error(str(error))
+    # В мониторинге о недоступных каталогах сообщает сам мониторинг
+    if args.watch:
+        denied = []
+    for message in denied:
+        print(f"stt-ru: ошибка: {message}", file=sys.stderr)
     if not jobs and not args.watch:
         log("Файлов для распознавания нет")
+        if denied:
+            sys.exit(1)
         return
     log(f"Загрузка модели {args.model}...")
     try:
@@ -518,9 +519,21 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
         report = batch.run(jobs)
         if args.output_dir or len(jobs) > 1:
             log(summary_line(report))
-        failed = bool(report.failed)
+        failed = bool(report.failed or denied)
     if failed:
         sys.exit(1)
+
+
+def _check_printing(parser: ArgumentParser, args: argparse.Namespace, formats: list[str]) -> None:
+    if sys.stdout is None:
+        print("stt-ru: ошибка: вывод закрыт", file=sys.stderr)
+        sys.exit(1)
+    if len(formats) != 1:
+        parser.error("без --output-dir печатается один формат")
+    if args.watch:
+        parser.error("для --watch нужен --output-dir")
+    if args.delete_source and args.summary is None:
+        parser.error("для --delete-source нужен --output-dir или --summary")
 
 
 def _printer(fmt: str, several: bool) -> Callable[[Job, Transcript], None]:

@@ -356,11 +356,9 @@ def _remove_stale(parent: Path) -> int:
         return 0
     removed = 0
     for folder in parent.glob(f"{PREFIX}*"):
-        lock = folder / LOCK
-        if not lock.is_file():
-            continue
+        # Нет файла блокировки, чужой каталог без доступа или живой процесс - не трогать
         try:
-            with lock.open() as handle:
+            with (folder / LOCK).open() as handle:
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             continue

@@ -170,18 +170,41 @@ class TestFindJobs:
         assert [job.source for job in jobs] == [first, second]
 
     @posix_permissions
-    def test_unreadable_directory(self, calls):
+    def test_unreadable_subdirectory_skipped(self, calls):
         locked = calls / "sub"
         locked.chmod(0)
         try:
-            with pytest.raises(PermissionError, match=f"Нет доступа к каталогу: {locked}"):
-                find_jobs([calls], recursive=True)
             messages = []
-            jobs = find_jobs([calls], recursive=True, strict=False, log=messages.append)
-            assert messages == [f"Нет доступа к каталогу: {locked}"]
-            assert jobs == []
+            jobs = find_jobs([calls], recursive=True, log=messages.append)
         finally:
             locked.chmod(0o755)
+        assert messages == [f"Нет доступа к каталогу: {locked}"]
+        assert [job.label for job in jobs] == ["a.wav", "b.MP3"]
+
+    @posix_permissions
+    def test_unreadable_argument(self, calls):
+        calls.chmod(0)
+        try:
+            with pytest.raises(PermissionError, match=f"Нет доступа к каталогу: {calls}"):
+                find_jobs([calls])
+            messages = []
+            assert find_jobs([calls], strict=False, log=messages.append) == []
+        finally:
+            calls.chmod(0o755)
+        assert messages == [f"Нет доступа к каталогу: {calls}"]
+
+    def test_same_names_ordered_by_path(self, tmp_path):
+        for name in ("a.wav", "a.mp3", "a.flac"):
+            touch(tmp_path / name)
+        messages = []
+        jobs = find_jobs([tmp_path], strict=False, log=messages.append)
+        assert [job.label for job in jobs] == ["a.flac"]
+        assert messages == [
+            f"У файлов {tmp_path / 'a.flac'} и {tmp_path / 'a.mp3'} совпадают имена результатов: "
+            f"{tmp_path / 'a.mp3'} пропущен",
+            f"У файлов {tmp_path / 'a.flac'} и {tmp_path / 'a.wav'} совпадают имена результатов: "
+            f"{tmp_path / 'a.wav'} пропущен",
+        ]
 
 
 class TestOptions:
@@ -224,6 +247,18 @@ class TestOptions:
     def test_empty_target(self):
         with pytest.raises(ParameterError, match="Путь результата не задан"):
             check_target("", directory=True)
+
+    @posix_permissions
+    def test_summary_appended_in_read_only_directory(self, tmp_path):
+        summary = touch(tmp_path / "all.csv")
+        tmp_path.chmod(0o500)
+        try:
+            check_options(["txt"], summary)
+        finally:
+            tmp_path.chmod(0o755)
+        summary.chmod(0o444)
+        with pytest.raises(ParameterError, match=f"Нет права записи в файл {summary}"):
+            check_options(["txt"], summary)
 
     @posix_permissions
     def test_unwritable_directory(self, tmp_path):
@@ -768,6 +803,94 @@ class TestWatch:
         assert (
             "Прерывание: дожидаюсь файлов в работе (1), Ctrl+C еще раз - выйти сразу" in messages
         )
+
+    def test_incomplete_wav_reported_once(self, tmp_path):
+        folder = tmp_path / "in"
+        audio = touch(folder / "cut.wav", wav_header(1000) + b"\0" * 400)
+        errors = []
+        transcriber = FakeTranscriber()
+        batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet(errors=errors.append))
+        watch(batch, [folder], min_age=0, rounds=3, sleep=settled(), clock=later)
+        assert errors == [f"{audio}: в WAV меньше данных, чем в заголовке, ждет дописывания"]
+        assert transcriber.calls == []
+
+    def test_changed_file_retried_with_overwrite(self, tmp_path, monkeypatch):
+        folder = tmp_path / "in"
+        audio = touch(folder / "a.wav", b"part")
+
+        class Reading(FakeTranscriber):
+            def transcribe(self, path):
+                text = Path(path).read_bytes().decode()
+                return Transcript((Segment(0.0, 1.0, text, None),), 1.0, 1, "fake", "a.wav")
+
+        attempts = []
+        append = Batch._append_summary
+
+        def flaky(self, transcript):
+            attempts.append(transcript.text)
+            if len(attempts) == 2:
+                raise PermissionError("файл открыт в Excel")
+            append(self, transcript)
+
+        monkeypatch.setattr(Batch, "_append_summary", flaky)
+        out = tmp_path / "out"
+        batch = Batch(Reading(), out, ["txt"], summary=tmp_path / "all.csv", **quiet())
+        steps = iter([lambda: audio.write_bytes(b"part+rest"), lambda: None, lambda: None])
+        report = watch(
+            batch,
+            [folder],
+            min_age=0,
+            rounds=4,
+            sleep=settled(lambda s: next(steps)()),
+            clock=later,
+        )
+        assert attempts == ["part", "part+rest", "part+rest"]
+        assert (out / "a.txt").read_text(encoding="utf-8").strip() == "part+rest"
+        assert report.failed == {}
+
+    @posix_permissions
+    def test_locked_directory_keeps_attempts(self, tmp_path):
+        folder = tmp_path / "in"
+        audio = touch(folder / "sub" / "a.wav")
+        transcriber = FakeTranscriber()
+        batch = Batch(transcriber, None, [], summary=tmp_path / "all.csv", **quiet())
+        locks = iter(
+            [
+                lambda: (folder / "sub").chmod(0),
+                lambda: (folder / "sub").chmod(0o755),
+                lambda: None,
+            ]
+        )
+        try:
+            watch(
+                batch,
+                [folder],
+                recursive=True,
+                min_age=0,
+                rounds=3,
+                sleep=settled(lambda s: next(locks)()),
+                clock=later,
+            )
+        finally:
+            (folder / "sub").chmod(0o755)
+        assert transcriber.calls == [audio]
+
+    def test_file_hidden_by_conflict_keeps_attempt(self, tmp_path):
+        folder = tmp_path / "in"
+        audio = touch(folder / "a.wav")
+        transcriber = FakeTranscriber()
+        batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet())
+        # a.mp3 идет раньше по пути и вытесняет a.wav; потом исчезает
+        steps = iter([lambda: touch(folder / "a.mp3"), lambda: (folder / "a.mp3").unlink()])
+        watch(
+            batch,
+            [folder],
+            min_age=0,
+            rounds=3,
+            sleep=settled(lambda s: next(steps)()),
+            clock=later,
+        )
+        assert transcriber.calls == [audio]
 
     def test_existing_results_skipped(self, tmp_path):
         folder = tmp_path / "in"
