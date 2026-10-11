@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import json
 import os
 import re
 import sys
@@ -24,8 +25,16 @@ from .batch import (
     log_to_stderr,
     summary_line,
     watch,
+    write_atomic,
 )
-from .exceptions import ModelError, ParameterError
+from .evaluation import (
+    ModelReport,
+    evaluate as evaluate_model,
+    format_table,
+    load_manifest,
+    require_jiwer,
+)
+from .exceptions import MissingDependencyError, ModelError, ParameterError
 from .export import FORMATS, render, to_csv
 from .pipeline import Transcriber
 from .result import Transcript
@@ -106,7 +115,8 @@ def build_parser() -> ArgumentParser:
     parser = ArgumentParser(
         prog="stt-ru",
         usage="%(prog)s [-h] [--version] КОМАНДА ...",
-        description="Распознавание русской речи моделью GigaAM-v3 и другими моделями onnx-asr",
+        description="Распознавание русской речи моделью GigaAM-v3 и другими моделями onnx-asr "
+        "и оценка качества моделей на своей разметке",
     )
     parser.options.add_argument(
         "--version",
@@ -165,7 +175,6 @@ def build_parser() -> ArgumentParser:
         metavar="N",
         help="сколько файлов распознавать одновременно (по умолчанию 1)",
     )
-    files.add_argument("--ffmpeg", metavar="ПУТЬ", help="путь к программе ffmpeg")
     monitor = transcribe.add_argument_group("мониторинг")
     monitor.add_argument(
         "--watch",
@@ -186,38 +195,79 @@ def build_parser() -> ArgumentParser:
         metavar="СЕК",
         help="сколько секунд файл не должен меняться, чтобы его взять (по умолчанию 10)",
     )
-    model = transcribe.add_argument_group("модель")
-    model.add_argument(
-        "-m",
-        "--model",
-        default=DEFAULT_MODEL,
-        metavar="ИМЯ",
-        help=f"модель onnx-asr (по умолчанию {DEFAULT_MODEL})",
+    _add_model_options(transcribe, several=False)
+    output.add_argument(
+        "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
     )
+    evaluate_parser = commands.add_parser(
+        "evaluate",
+        help="оценить качество моделей на своей разметке",
+        prog="stt-ru evaluate",
+        description="Распознает записи из разметки каждой моделью и считает долю ошибок "
+        "слов (WER) и символов (CER) после нормализации: регистр, «ё», пунктуация. Числа "
+        "не переводятся: если модель пишет цифры, а эталон - слова, WER завышен. Скорость - "
+        "во сколько раз распознавание быстрее реального времени",
+    )
+    parser.commands["evaluate"] = evaluate_parser
+    evaluate_parser.add_argument(
+        "manifest",
+        metavar="РАЗМЕТКА",
+        help="CSV или JSONL в UTF-8 с полями audio, text и необязательным channel или "
+        "каталог, где у каждого аудиофайла есть эталон .txt с тем же именем",
+    )
+    report = evaluate_parser.add_argument_group("отчет")
+    report.add_argument("-o", "--output", metavar="ФАЙЛ", help="подробный отчет в JSON")
+    report.add_argument(
+        "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
+    )
+    _add_model_options(evaluate_parser, several=True)
+    return parser
+
+
+def _add_model_options(command: ArgumentParser, several: bool) -> None:
+    model = command.add_argument_group("модель")
+    if several:
+        model.add_argument(
+            "-m",
+            "--model",
+            action="append",
+            metavar="ИМЯ",
+            help=f"модель onnx-asr; можно повторить (по умолчанию {DEFAULT_MODEL})",
+        )
+    else:
+        model.add_argument(
+            "-m",
+            "--model",
+            default=DEFAULT_MODEL,
+            metavar="ИМЯ",
+            help=f"модель onnx-asr (по умолчанию {DEFAULT_MODEL})",
+        )
     model.add_argument(
         "--quantization",
         default=DEFAULT_QUANTIZATION,
         metavar="ТИП",
         help=f"квантизация весов: {DEFAULT_QUANTIZATION} (по умолчанию) или none",
     )
-    model.add_argument("--model-dir", metavar="КАТАЛОГ", help="каталог с файлами модели")
+    model.add_argument(
+        "--model-dir",
+        metavar="КАТАЛОГ",
+        help="каталог с файлами модели" + (" (только для одной модели)" if several else ""),
+    )
     model.add_argument(
         "--device",
         choices=list(DEVICES),
         default="auto",
         help="устройство: auto (по умолчанию), cpu, cuda, coreml, directml",
     )
-    model.add_argument("--mono", action="store_true", help="сводить каналы в один")
-    vad = transcribe.add_argument_group("поиск речи")
+    audio = command.add_argument_group("аудио")
+    audio.add_argument("--mono", action="store_true", help="сводить каналы в один")
+    audio.add_argument("--ffmpeg", metavar="ПУТЬ", help="путь к программе ffmpeg")
+    vad = command.add_argument_group("поиск речи")
     vad.add_argument("--vad-threshold", type=float, metavar="P", help="порог вероятности речи")
     vad.add_argument("--min-speech-ms", type=float, metavar="МС", help="наименьший фрагмент")
     vad.add_argument("--max-speech-s", type=float, metavar="С", help="наибольший фрагмент")
     vad.add_argument("--min-silence-ms", type=float, metavar="МС", help="наименьшая пауза")
     vad.add_argument("--speech-pad-ms", type=float, metavar="МС", help="запас по краям")
-    output.add_argument(
-        "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
-    )
-    return parser
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -243,8 +293,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command is None:
         parser.print_help(sys.stderr)
         sys.exit(2)
+    command = {"transcribe": transcribe, "evaluate": evaluate}[args.command]
     try:
-        transcribe(parser.commands[args.command], args)
+        command(parser.commands[args.command], args)
     except KeyboardInterrupt:
         _exit(INTERRUPTED)
     except BrokenPipeError:
@@ -376,3 +427,75 @@ def _printer(fmt: str, several: bool) -> Callable[[Job, Transcript], None]:
         printed += 1
 
     return show
+
+
+def evaluate(parser: ArgumentParser, args: argparse.Namespace) -> None:
+    """
+    Команда evaluate
+
+    Описание:
+        Разметка, аргументы и jiwer проверяются до загрузки моделей. Модели загружаются
+        по очереди; модель, которая не загрузилась, отмечается в таблице
+
+    Аргументы:
+        parser (ArgumentParser): Разбор аргументов для сообщений об ошибках
+        args (argparse.Namespace): Разобранные аргументы
+    """
+    log: Log = ignore if args.quiet else log_to_stderr
+    models = list(dict.fromkeys(args.model or [DEFAULT_MODEL]))
+    try:
+        vad = _vad_options(args)
+        if args.model_dir is not None and len(models) > 1:
+            parser.error("--model-dir задается только для одной модели")
+        if args.output is not None and Path(args.output).suffix.lower() != ".json":
+            parser.error(f"отчет сохраняется в JSON: {args.output}")
+        samples = load_manifest(args.manifest)
+        providers = _providers(parser, args.device)
+    except (FileNotFoundError, ParameterError) as error:
+        parser.error(str(error))
+    try:
+        require_jiwer()
+    except MissingDependencyError as error:
+        print(f"stt-ru: ошибка: {error}", file=sys.stderr)
+        sys.exit(1)
+    log(f"Записей в разметке: {len(samples)}")
+    reports = []
+    for model in models:
+        log(f"Загрузка модели {model}...")
+        try:
+            transcriber = Transcriber(
+                model,
+                quantization=None if args.quantization.lower() == "none" else args.quantization,
+                model_dir=args.model_dir,
+                providers=providers,
+                vad=vad,
+                split_channels=not args.mono,
+                ffmpeg=args.ffmpeg,
+            )
+        except ModelError as error:
+            print(f"stt-ru: ошибка: {error}", file=sys.stderr)
+            reports.append(ModelReport(model, error=str(error)))
+            continue
+        reports.append(evaluate_model(transcriber, samples, log=log))
+        del transcriber
+    failed = any(report.error is not None or report.failed for report in reports)
+    if args.output is not None:
+        document = {"manifest": str(args.manifest), "models": [r.to_dict() for r in reports]}
+        content = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+        try:
+            write_atomic(Path(args.output), content.encode("utf-8"))
+        except OSError as error:
+            print(f"stt-ru: ошибка: отчет не сохранен в {args.output}: {error}", file=sys.stderr)
+            failed = True
+        else:
+            log(f"Отчет: {args.output}")
+    print(format_table(reports))
+    for report in reports:
+        if report.digits_mismatch:
+            print(
+                f"{report.model}: в {report.digits_mismatch} записях распознаны цифры, а в эталоне "
+                "их нет - WER завышен; для честного сравнения запишите числа в эталоне цифрами",
+                file=sys.stderr,
+            )
+    if failed:
+        sys.exit(1)
