@@ -2,17 +2,13 @@ name: docker
 
 on:
   pull_request:
-    paths: &paths
+    paths:
       - "src/**"
       - "docker/**"
       - ".dockerignore"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/docker.yml"
-  # Сборка на master наполняет кэш слоев, доступный следующим PR
-  push:
-    branches: [master]
-    paths: *paths
   release:
     types: [published]
   workflow_dispatch:
