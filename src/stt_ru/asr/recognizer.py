@@ -1,4 +1,6 @@
+import contextlib
 import os
+import sys
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -8,6 +10,7 @@ import onnx_asr
 import onnxruntime as rt
 from onnx_asr.adapters import TextResultsAsrAdapter
 from onnx_asr.utils import ModelFileNotFoundError, SampleRates
+from onnx_asr.vad import Vad
 
 from ..audio.loader import Samples
 from ..exceptions import AudioError, ModelError
@@ -18,8 +21,14 @@ DEFAULT_QUANTIZATION = "int8"
 SAMPLE_RATES: tuple[int, ...] = get_args(SampleRates)
 # Silero VAD нужно 36 мс; более короткие записи распознаются как пустые
 MIN_DURATION = 0.05
-# CoreML на моделях onnx-asr медленнее CPU и держит в памяти в разы больше
-EXCLUDED_PROVIDERS = ("CoreMLExecutionProvider", "AzureExecutionProvider")
+# CoreML на моделях onnx-asr медленнее CPU и держит в памяти в разы больше; TensorRT из
+# onnxruntime-gpu требует отдельно установленный TensorRT и долго собирает движки
+EXCLUDED_PROVIDERS = (
+    "CoreMLExecutionProvider",
+    "AzureExecutionProvider",
+    "TensorrtExecutionProvider",
+    "NvTensorRTRTXExecutionProvider",
+)
 
 Found = list[tuple[float, float, str]]
 
@@ -29,7 +38,7 @@ def default_providers() -> list[str]:
     Провайдеры ONNX Runtime по умолчанию
 
     Вывод:
-        list[str]: Доступные провайдеры по приоритету, кроме CoreML и Azure
+        list[str]: Доступные провайдеры по приоритету, кроме CoreML, Azure и TensorRT
     """
     return [name for name in rt.get_available_providers() if name not in EXCLUDED_PROVIDERS]
 
@@ -77,6 +86,13 @@ class Recognizer:
         self._options = rt.SessionOptions()
         # Без этого ONNX Runtime пишет в stderr предупреждения о разбиении графа по провайдерам
         self._options.log_severity_level = 3
+        # ONNX Runtime печатает в stdout ошибку провайдера, если переходит на запасной,
+        # а stdout - для результата распознавания
+        with contextlib.redirect_stdout(sys.stderr):
+            asr, silero = self._load_all(quantization)
+        self._asr = asr.with_vad(silero, **(vad or VadOptions()).as_kwargs())
+
+    def _load_all(self, quantization: str | None) -> tuple[TextResultsAsrAdapter, Vad]:
         try:
             try:
                 asr = self._load(quantization)
@@ -84,8 +100,8 @@ class Recognizer:
                 if quantization is None:
                     raise
                 warnings.warn(
-                    f"У модели {model} нет весов {quantization}, загружаются исходные веса",
-                    stacklevel=2,
+                    f"У модели {self.model} нет весов {quantization}, загружаются исходные веса",
+                    stacklevel=3,
                 )
                 self.quantization = None
                 asr = self._load(None)
@@ -94,8 +110,10 @@ class Recognizer:
             )
         except Exception as error:
             variant = f" с квантизацией {self.quantization}" if self.quantization else ""
-            raise ModelError(f"Не удалось загрузить модель {model}{variant}: {error}") from error
-        self._asr = asr.with_vad(silero, **(vad or VadOptions()).as_kwargs())
+            raise ModelError(
+                f"Не удалось загрузить модель {self.model}{variant}: {error}"
+            ) from error
+        return asr, silero
 
     def _load(self, quantization: str | None) -> TextResultsAsrAdapter:
         return onnx_asr.load_model(

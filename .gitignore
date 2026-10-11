@@ -18,13 +18,10 @@ coverage.xml
 .pytest_cache
 .ruff_cache
 .ipynb_checkpoints/
+*.log
 
 # Документация
 site/
-
-# Временные файлы распознавания версии 0.2
-lat.gz
-*.log
 
 # Редакторы и ОС
 .vscode

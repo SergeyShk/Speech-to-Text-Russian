@@ -1,0 +1,9 @@
+# В образ попадают только файлы сборки пакета
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE.txt
+!src/
+!docker/healthcheck.py
+**/__pycache__

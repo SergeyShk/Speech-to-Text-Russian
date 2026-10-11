@@ -1,0 +1,11 @@
+# Сервис stt-ru: docker compose -f docker/compose.yaml up -d
+# С GPU: docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml up -d
+services:
+  stt-ru:
+    image: ghcr.io/sergeyshk/stt-ru:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Токен - из переменной окружения или файла .env рядом с compose.yaml; пустой - без токена
+      STT_RU_TOKEN: ${STT_RU_TOKEN:-}
+    restart: unless-stopped

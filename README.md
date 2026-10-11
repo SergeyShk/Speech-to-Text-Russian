@@ -4,181 +4,60 @@
 <img src="docs/img/logo.jpg" width="800">
 </p>
 
-Проект для распознавания речи на русском языке на основе pykaldi.
+**stt-ru** - распознавание русской речи: библиотека Python, команда `stt-ru`, веб-интерфейс с REST API и Docker-образ. Речь распознает модель [GigaAM-v3](https://github.com/salute-developers/GigaAM) через [onnx-asr](https://github.com/istupakov/onnx-asr): текст получается с пунктуацией и числами, каналы стереозаписи распознаются как отдельные говорящие, результат сохраняется в TXT, JSON, JSONL, SRT, VTT, ASS и CSV.
+
+Документация: https://sergeyshk.github.io/Speech-to-Text-Russian/
+
+> Пакет готовится к первому выпуску 0.3.0. Версия 0.2 на Kaldi осталась в истории репозитория: [последнее состояние с ней](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/8db5f77d967216fe36194eca067f6b879301b765).
 
 ## Установка
-### Самостоятельная (Linux)
 
-1. Установить kaldi:
+Python 3.11 или новее:
 
-https://kaldi-asr.org/doc/tutorial_setup.html
-
-2. Установить Python 3.11 (версия зафиксирована в файле **.python-version**). Это последняя версия Python, для которой собран pykaldi 0.2.2.
-
-3. Установить необходимые Python-библиотеки:
-
-`$ pip install -r requirements.txt`
-
-4. Установить pykaldi:
-
-* Из готового колеса для Python 3.11 со страницы релизов pykaldi 0.2.2 (https://github.com/pykaldi/pykaldi/releases/tag/v0.2.2). Колеса выложены сжатыми в .gz, перед установкой их нужно распаковать:
-
-`$ curl -LO https://github.com/pykaldi/pykaldi/releases/download/v0.2.2/pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl.gz`
-
-`$ gunzip pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl.gz`
-
-`$ pip install pykaldi-0.2.2-cp311-cp311-linux_x86_64.whl`
-
-* С помощью conda (с поддержкой GPU):
-
-`$ conda install -c pykaldi pykaldi`
-
-* С помощью conda (без поддержки GPU):
-
-`$ conda install -c pykaldi pykaldi-cpu`
-
-* Собрать из исходников (раздел From Source):
-
-https://github.com/pykaldi/pykaldi
-
-5. Добавить в PATH пути к компонентам kaldi:
-
-`$ PATH /kaldi/src/featbin:/kaldi/src/ivectorbin:/kaldi/src/online2bin:/kaldi/src/rnnlmbin:/kaldi/src/fstbin:$PATH`
-
-6. Склонировать репозиторий проекта:
-
-`$ git clone https://github.com/SergeyShk/Speech-to-Text-Russian.git`
-
-7. Отредактировать файл **model/conf/ivector_extractor.conf**, указав в нем корректные директории
-
-### Docker
-
-1. Собрать docker-образ:
-
-`$ docker build -t speech_recognition:latest .`
-
-Или
-
-`$ docker pull ghcr.io/sergeyshk/stt-ru:0.2.0`
-
-2. Создать docker-том для работы с внешними данными:
-
-`$ docker volume create -d local -o type=none -o o=bind -o device=[DIR] asr_volume`
-
-3. Запустить docker-контейнер:
-
-`$ docker run -it --rm -p 9000:9000 -p 5000:5000 -v asr_volume:/archive speech_recognition`
-
-## Структура проекта
-
-Файлы проекта расположены в директории /speech_recognition:
-
-* **start_recognition.py** - скрипт запуска процедуры распознавания;
-* **/tools** - набор инструментов для распознавания:
-    * **data_preparator.py** - скрипт подготовки данных для распознавания;
-    * **recognizer.py** - скрипт распознавания речи;
-    * **segmenter.py** - скрипт сегментации речи;
-    * **transcriptins_parser.py** - скрипт парсинга результатов распознавания;
-* **/model** - набор файлов для модели распознавания;
-* **/examples** - набор ноутбуков с примерами работы инструментов.
-
-## Модель
-
-В качестве акустической и языковой модели используется русскоязычная модель от alphacep:
-
-http://alphacephei.com/kaldi/kaldi-ru-0.6.tar.gz
-
-При необходимости использования собственной модели, необходимо заменить соответствующие файлы в директории /model.
-
-> **Внимание!** Размер файла HCLG.fst составляет более 500МБ, поэтому для корректного клонирования репозитория необходимо установить на свой компьютер GitHub LFS. Также можно скачать данный файл вручную с соответствующей страницы проекта.
-
-## Запуск
-### Распознавание речи
-
-1. Подготовить директорию для размещения WAV-файлов;
-2. Для запуска процедуры распознавания речи выполнить команду:
-
-`$ ./start_recognition.py /archive/wav /archive/output -dw -l`
-
-3. Для запуска режима мониторинга директории выполнить команду:
-
-`$ ./start_recognition.py /archive/wav /archive/output -l -t 60 -d 1`
-
-Описание параметров запуска доступно по команде:
-
-`$ ./start_recognition.py -h`
-
-```console
-usage: start_recognition.py [-h] [-rm REC_MODEL] [-rg REC_GRAPH]
-                            [-rw REC_WORDS] [-rc REC_CONF] [-ri REC_ICONF]
-                            [-sm SEGM_MODEL] [-sc SEGM_CONF] [-sp SEGM_POST]
-                            [-p PROCESSES] [-l] [-dw] [-t TIME] [-d DELTA]
-                            WAV OUT
-
-Запуск процедуры распознавания речи
-
-positional arguments:
-  WAV                   Путь к .WAV файлам аудио
-  OUT                   Путь к директории с результатами распознавания
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -rm REC_MODEL, --rec_model REC_MODEL
-                        Путь к .MDL файлу модели распознавания
-  -rg REC_GRAPH, --rec_graph REC_GRAPH
-                        Путь к .FST файлу общего графа распознавания
-  -rw REC_WORDS, --rec_words REC_WORDS
-                        Путь к .TXT файлу текстового корпуса
-  -rc REC_CONF, --rec_conf REC_CONF
-                        Путь к .CONF конфигурационному файлу распознавания
-  -ri REC_ICONF, --rec_iconf REC_ICONF
-                        Путь к .CONF конфигурационному файлу векторного
-                        экстрактора
-  -sm SEGM_MODEL, --segm_model SEGM_MODEL
-                        Путь к .RAW файлу модели сегментации
-  -sc SEGM_CONF, --segm_conf SEGM_CONF
-                        Путь к .CONF конфигурационному файлу сегментации
-  -sp SEGM_POST, --segm_post SEGM_POST
-                        Путь к .VEC файлу апостериорных вероятностей
-                        сегментации
-  -p PROCESSES, --processes PROCESSES
-                        Количество процессов для обработки файлов
-  -l, --log             Логировать результат распознавания
-  -dw, --delete_wav     Удалять .WAV файлы после распознавания
-  -t TIME, --time TIME  Пауза перед очередным сканированием директории в
-                        секундах
-  -d DELTA, --delta DELTA
-                        Дельта, выдерживаемая до чтения файла в минутах
+```bash
+pip install stt-ru                # библиотека и команда stt-ru
+pip install "stt-ru[ffmpeg]"      # M4A, AAC, звук из видео без установленного ffmpeg
+pip install "stt-ru[service]"     # веб-интерфейс и REST API
+pip install "stt-ru[eval]"        # оценка качества моделей на своей разметке
 ```
 
-### Веб-интерфейс и REST API
+Модель (около 230 МБ) скачивается с Hugging Face при первом запуске.
 
-1. Установить пакет с сервисом:
+## Использование
 
-`$ pip install 'stt-ru[service]'`
+```bash
+stt-ru transcribe call.wav                                       # текст в консоль
+stt-ru transcribe calls/ -o out/ -f srt,ass,csv --summary out/all.csv
+stt-ru transcribe calls/ -o out/ --watch                         # мониторинг папки
+stt-ru evaluate eval.csv -m gigaam-v3-e2e-rnnt -m gigaam-v3-rnnt # сравнение моделей
+stt-ru serve                                                     # http://127.0.0.1:8000
+```
 
-2. Запустить сервис:
+```python
+from stt_ru import Transcriber
 
-`$ stt-ru serve`
+result = Transcriber().transcribe("call.wav")
+for segment in result.segments:
+    print(segment.speaker, segment.start, segment.end, segment.text)
+result.save("call.srt")
+```
 
-Токен доступа задается переменной окружения `STT_RU_TOKEN`, параметры запуска - `stt-ru serve --help`.
+Параметры команд - `stt-ru <команда> --help`.
 
-3. Перейти по адресу:
+## Docker
 
-`http://127.0.0.1:8000`; описание REST API - `http://127.0.0.1:8000/docs`
+Образы публикуются в GHCR начиная с выпуска 0.3.0; модель по умолчанию уже в образе.
 
-### Сервис ноутбуков
+```bash
+docker run -p 8000:8000 -e STT_RU_TOKEN=секрет ghcr.io/sergeyshk/stt-ru     # сервис
+docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe call.wav  # один файл
+docker compose -f docker/compose.yaml up -d                                   # сервис через Compose
+```
 
-1. Запустить сервис:
+В контейнере команды работают от пользователя с uid 1000; чтобы сохранять результаты (`-o`) в смонтированный каталог другого пользователя, добавьте `--user "$(id -u):$(id -g)"`.
 
-`$ jupyter notebook --no-browser --ip=0.0.0.0 --port=9000 --allow-root`
-
-2. Перейти по адресу:
-
-`http://0.0.0.0:9000`
+Для NVIDIA GPU - образ `ghcr.io/sergeyshk/stt-ru:latest-gpu` и `docker/compose.gpu.yaml`: нужны GPU поколения Turing или новее, драйвер NVIDIA 580 или новее и NVIDIA Container Toolkit. Собрать образ из репозитория: `make docker` или `make docker-gpu`.
 
 ## Лицензия
 
-Код проекта распространяется под лицензией MIT, см. файл **LICENSE.txt**.
-
-Модель распознавания в директории /model принадлежит Alpha Cephei и распространяется на собственных условиях, см. https://alphacephei.com/vosk/models
+Код распространяется под лицензией MIT, см. файл **LICENSE.txt**. Модель GigaAM-v3 распространяется под лицензией MIT.
