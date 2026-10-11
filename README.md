@@ -1,8 +1,8 @@
-# Speech-to-Text (Russian)
-
 <p align="center">
-<img src="docs/img/logo.jpg" width="800">
+  <img src="https://raw.githubusercontent.com/SergeyShk/Speech-to-Text-Russian/master/docs/img/stt-ru.png" alt="stt-ru" width="480">
 </p>
+
+# Speech-to-Text (Russian)
 
 **stt-ru** - распознавание русской речи: библиотека Python, команда `stt-ru`, веб-интерфейс с REST API и Docker-образ. Речь распознает модель [GigaAM-v3](https://github.com/salute-developers/GigaAM) через [onnx-asr](https://github.com/istupakov/onnx-asr): текст получается с пунктуацией и числами, каналы стереозаписи распознаются как отдельные говорящие, результат сохраняется в TXT, JSON, JSONL, SRT, VTT, ASS и CSV.
 
