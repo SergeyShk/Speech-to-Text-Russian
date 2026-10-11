@@ -1,6 +1,6 @@
 # Examples
 
-Jupyter notebooks in the [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks) directory of the repository. Each opens in Google Colab with a button and installs stt-ru itself; the outputs of all cells are stored in the files, so the notebooks can be read without running. The notebooks download their recordings and references themselves. The notebooks are in Russian.
+Jupyter notebooks in the [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks) directory of the repository. Each opens in Google Colab with a button and installs stt-ru itself; the outputs of all cells are stored in the files, so the notebooks can be read without running, and the recordings can be played in the embedded players. The notebooks download their recordings and references themselves. The notebooks are in Russian.
 
 ## Quick start
 
