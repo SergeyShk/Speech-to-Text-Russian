@@ -48,7 +48,8 @@ make docs-build  # mkdocs build --strict, если менялась докуме
 - `src/stt_ru/` - пакет stt-ru.
 - `tests/` - тесты, повторяющие структуру пакета; `tests/test_docs.py` сверяет два языка документации.
 - `docs/` - документация MkDocs (Material), `mkdocs.yml` - навигация и перевод её на английский.
-- `.github/workflows/` - CI (`ci.yml`), публикация (`publish.yml`), документация (`docs.yml`), Docker-образы (`docker.yml`: сборка и проверка в PR, публикация в GHCR при выпуске).
+- `.github/workflows/` - CI (`ci.yml`), публикация (`publish.yml`), документация (`docs.yml`), Docker-образы (`docker.yml`: сборка и проверка в PR, публикация в GHCR при выпуске), ноутбуки (`notebooks.yml`, по расписанию и вручную).
 - `docker/` - Docker-образы для CPU и NVIDIA GPU и файлы Docker Compose.
+- `notebooks/` - ноутбуки с примерами; зависимости ставятся отдельно (`uv sync --all-extras --group notebooks`), после правок ноутбуки выполняются командой `make notebooks`, выводы хранятся в файлах, метаданные выполнения убирает nbstripout.
 
 Версия хранится только в `pyproject.toml`; релизы выпускаются через GitHub Release, изменения описываются в его заметках, отдельного файла CHANGELOG нет.

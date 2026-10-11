@@ -18,6 +18,7 @@ coverage.xml
 .pytest_cache
 .ruff_cache
 .ipynb_checkpoints/
+notebooks/data/
 *.log
 
 # Документация

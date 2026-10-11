@@ -48,7 +48,7 @@ stt-ru serve                                   # web interface at http://127.0.0
 PosixPath('call.srt')
 ```
 
-On the first run the model (about 230 MB) is downloaded from Hugging Face.
+On the first run the model (about 230 MB) is downloaded from Hugging Face. More examples are in the [notebooks](examples.md).
 
 ## How it works
 

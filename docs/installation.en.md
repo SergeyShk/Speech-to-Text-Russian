@@ -79,7 +79,7 @@ pip install ".[ffmpeg,service,eval]"
 For development [uv](https://docs.astral.sh/uv/) is more convenient: it creates an environment with all dependencies and development tools.
 
 ``` bash
-uv sync --all-groups --all-extras
+uv sync --all-groups --no-group notebooks --all-extras
 ```
 
 The workflow and the checks before a pull request are described in [CONTRIBUTING.md](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/CONTRIBUTING.md).

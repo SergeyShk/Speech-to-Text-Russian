@@ -7,6 +7,7 @@ nav:
     - Главная:
       - О проекте: index.md
       - Установка: installation.md
+      - Примеры: examples.md
       - Авторы: authors.md
     - Распознавание:
       - Команда transcribe: transcribe.md
@@ -51,6 +52,7 @@ plugins:
             Главная: Home
             О проекте: About
             Установка: Installation
+            Примеры: Examples
             Авторы: Authors
             Распознавание: Transcription
             Команда transcribe: The transcribe command
