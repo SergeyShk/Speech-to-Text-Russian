@@ -1019,6 +1019,7 @@
 <li><code>numpy</code></li>
 <li><code>soundfile</code></li>
 </ul>
+<p>На Intel Mac и macOS старше 14 у ONNX Runtime есть сборки только до 1.23 и только для Python 3.11-3.13: Python 3.14 там не поддерживается, вместо него подойдет <a href="../docker/">Docker-образ</a>.</p>
 <h2 id="pip">Установка с помощью <code>pip</code><a class="headerlink" href="#pip" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>stt-ru
 </code></pre></div>
@@ -1100,6 +1101,7 @@
 pip<span class="w"> </span>uninstall<span class="w"> </span>-y<span class="w"> </span>onnxruntime
 pip<span class="w"> </span>install<span class="w"> </span>onnxruntime-gpu<span class="o">==</span><span class="m">1</span>.31.0
 </code></pre></div>
+<p>Установка или обновление stt-ru и его дополнений (<code>pip install "stt-ru[service]"</code>, <code>pip install -U stt-ru</code>) снова ставит <code>onnxruntime</code> поверх GPU-сборки, и распознавание молча переходит на CPU. Ставьте дополнения до замены и повторяйте замену после каждого обновления.</p>
 <p>Требования сборок ONNX Runtime к драйверам и библиотекам - в <a href="https://onnxruntime.ai/docs/execution-providers/">документации ONNX Runtime</a>. По умолчанию (<code>--device auto</code>) stt-ru берет доступные устройства в порядке приоритета ONNX Runtime - GPU раньше CPU, - кроме CoreML и TensorRT; недоступное устройство, указанное явно, - ошибка с подсказкой, какой пакет поставить. Для NVIDIA GPU есть готовый <a href="../docker/#gpu">Docker-образ</a>.</p>
 <h2 id="git">Установка с помощью <code>git</code><a class="headerlink" href="#git" title="Permanent link">&para;</a></h2>
 <p>Последняя версия из репозитория проекта:</p>

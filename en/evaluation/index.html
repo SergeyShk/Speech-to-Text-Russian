@@ -1049,7 +1049,7 @@ gigaam-v3-rnnt         0.0     0.0     52.4x        2       0
 <p>Models are loaded one after another; a model that fails to load is marked in the table, and the others are evaluated. Progress and errors go to stderr, the table to stdout.</p>
 <h2 id="manifest">References<a class="headerlink" href="#manifest" title="Permanent link">&para;</a></h2>
 <p>References are a CSV file, a JSON Lines file or a folder. Files are UTF-8, and recording paths are relative to the reference file.</p>
-<p><strong>CSV</strong> with the columns <code>audio</code>, <code>text</code> and an optional <code>channel</code>. The separator is a comma, a semicolon (as Excel saves in the Russian locale) or a tab, column names may be in any case, and empty rows are skipped.</p>
+<p><strong>CSV</strong> with the columns <code>audio</code>, <code>text</code> and an optional <code>channel</code>. The separator is a comma, a semicolon (as Excel saves in the Russian locale) or a tab, column names may be in any case, and empty rows are skipped. Put text that contains the separator in quotes: a row with more values than columns is an error with its number.</p>
 <div class="highlight"><pre><span></span><code>audio,text,channel
 calls/0001.wav,"Добрый день, компания «Ромашка», чем могу помочь?",1
 calls/0001.wav,"Здравствуйте, хочу узнать статус заказа.",0
@@ -1060,7 +1060,7 @@ lectures/intro.mp3,"Сегодня мы поговорим о распознав
 <span class="p">{</span><span class="nt">"audio"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lectures/intro.mp3"</span><span class="p">,</span><span class="w"> </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Сегодня мы поговорим о распознавании речи."</span><span class="p">}</span>
 </code></pre></div>
 <p><strong>A folder</strong> where every audio file has a reference with the same name: <code>call.wav</code> and <code>call.txt</code>.</p>
-<p><code>channel</code> is the channel number of a stereo recording where a channel is a speaker: the reference is compared only with the text of that channel. If there is one track (a mono recording, <code>--mono</code> or identical channels), the whole text is compared. A file that appears in the references several times is transcribed once.</p>
+<p><code>channel</code> is the channel number of a stereo recording where a channel is a speaker: the reference is compared only with the text of that channel. If there is one track (a mono recording, <code>--mono</code> or identical channels), the whole text is compared; a channel that matched another channel of the recording is compared with the text of that channel. A file that appears in the references several times is transcribed once.</p>
 <h2 id="normalization">Normalization<a class="headerlink" href="#normalization" title="Permanent link">&para;</a></h2>
 <p>Before counting, the reference and the recognized text are brought to one form: lowercase, "ё" as "е", everything except letters and digits becomes a space. Decomposed letters with diacritics are composed, and stress marks and invisible characters (soft hyphen, zero-width space) are removed.</p>
 <p>Numbers are not converted between digits and words. If digits appear only in the reference or only in the recognized text, a warning is printed after the table: WER is inflated by the different spelling of numbers. GigaAM-v3 E2E writes numbers as digits, while GigaAM-v3 RNN-T and CTC write them as words, so for a fair comparison of such models write the numbers in the references the way the model you need writes them, or compare on recordings without numbers.</p>
@@ -1096,8 +1096,8 @@ lectures/intro.mp3,"Сегодня мы поговорим о распознав
 </tr>
 </tbody>
 </table>
-<p>The other model and speech detection parameters are on the <a href="../models/#options">Models</a> page; <code>--model-dir</code> is allowed only with one model. The references and arguments are checked before the models are loaded.</p>
-<p>The exit code is 1 if a model failed to load, a recording failed or the report was not saved, and 2 for invalid arguments or references.</p>
+<p>The other model and speech detection parameters are on the <a href="../models/#options">Models</a> page; <code>--model-dir</code> is allowed only with one model. The references and arguments, including the onnx-asr model names and the report path, are checked before the models are loaded; a model from Hugging Face (a name with "/") is checked when it loads.</p>
+<p>The exit code is 1 if a model failed to load, a recording failed or the report was not saved, 2 for invalid arguments or references, and 130 for Ctrl+C: the table and the report are kept for the models evaluated completely.</p>
 <h2 id="report">Report<a class="headerlink" href="#report" title="Permanent link">&para;</a></h2>
 <p><code>-o report.json</code> saves the reference path and, for each model, <code>model</code>, <code>error</code> (loading error), <code>wer</code>, <code>cer</code>, <code>speed</code>, the number of records <code>files</code> and errors <code>failed</code>, <code>digits_mismatch</code> and <code>results</code> per reference row: <code>audio</code>, <code>channel</code>, <code>reference</code>, <code>hypothesis</code>, <code>duration</code>, <code>seconds</code>, <code>words</code>, <code>substitutions</code>, <code>deletions</code>, <code>insertions</code>, <code>chars</code>, <code>char_errors</code>, <code>wer</code>, <code>cer</code> and <code>error</code>. With <code>hypothesis</code> and the error counts it is easy to find the recordings where the model makes the most mistakes.</p>
 <h2 id="python">Python library<a class="headerlink" href="#python" title="Permanent link">&para;</a></h2>

@@ -1135,8 +1135,8 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <ul>
 <li>A file larger than <code>--max-size</code> is rejected during upload (response 413) and is not written to disk.</li>
 <li>A recording longer than <code>--max-duration</code> gives a failed job; the duration is checked from the file header or while decoding, so a long recording is not read into memory entirely.</li>
-<li>If <code>--max-queue</code> files are waiting, new ones get a 503 response with <code>Retry-After</code>.</li>
-<li>Files are kept in a temporary folder under random names and deleted on request, <code>--keep</code> hours after the job finishes and when the service stops. Jobs are kept in memory and are lost on restart.</li>
+<li>If <code>--max-queue</code> files are waiting, new ones get a 503 response with <code>Retry-After</code>. An upload without the token (401) or into a full queue is refused before the file is sent.</li>
+<li>Files are kept in a temporary folder under random names and deleted on request, <code>--keep</code> hours after the job finishes and when the service stops. Jobs are kept in memory and are lost on restart; the files of a run that crashed (<code>kill -9</code>, out of memory) are deleted on the next start with the same folder (except on Windows).</li>
 </ul>
 <h2 id="api">REST API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h2>
 <table>
@@ -1165,7 +1165,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/jobs/{id}/audio</code></td>
-<td style="text-align: left;">The uploaded file, with seeking support (<code>Range</code>)</td>
+<td style="text-align: left;">The uploaded file, with seeking support (<code>Range</code>): audio and video for the player, anything else as an attachment</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>DELETE /v1/jobs/{id}</code></td>

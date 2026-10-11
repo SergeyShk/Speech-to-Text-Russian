@@ -1160,7 +1160,7 @@ Dialogue: 0,0:00:00.99,0:00:09.05,Default,Канал 1,0,0,0,,Наталья, б
 Dialogue: 0,0:00:03.49,0:00:03.93,Default,Канал 0,0,0,0,,Угу
 </code></pre></div>
 <h2 id="csv">CSV<a class="headerlink" href="#csv" title="Permanent link">&para;</a></h2>
-<p>Колонки <code>Audio File</code>, <code>Start</code>, <code>End</code>, <code>Name</code>, <code>Text</code>, время - в миллисекундах, разделитель - запятая. Файл начинается с BOM, поэтому Excel открывает кириллицу без настройки. Колонки совпадают с CSV версии 0.2, таблицы и отчеты на нем продолжают работать.</p>
+<p>Колонки <code>Audio File</code>, <code>Start</code>, <code>End</code>, <code>Name</code>, <code>Text</code>, время - в миллисекундах, разделитель - запятая. Файл начинается с BOM, поэтому Excel открывает кириллицу без настройки; в консоль CSV печатается без BOM, для Excel сохраняйте его через <code>--output-dir</code> или <code>--summary</code>. Колонки совпадают с CSV версии 0.2, таблицы и отчеты на нем продолжают работать.</p>
 <div class="highlight"><pre><span></span><code>Audio File,Start,End,Name,Text
 call.wav,994,9054,Канал 1,"Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."
 call.wav,3490,3934,Канал 0,Угу

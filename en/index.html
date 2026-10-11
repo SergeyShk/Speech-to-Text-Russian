@@ -1027,7 +1027,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <ol>
 <li>The file is read entirely: WAV, FLAC, OGG, MP3 and other uncompressed formats by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.</li>
-<li>The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Identical channels are recognized once.</li>
+<li>The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Channels that differ only in loudness and a small delay are recognized once.</li>
 <li><a href="models/#vad">Silero VAD</a> speech detection cuts the recording into speech segments of at most 20 s, and the model recognizes each segment.</li>
 <li>The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.</li>
 </ol>
