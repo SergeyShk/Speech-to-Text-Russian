@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev9"
+version = "0.3.0.dev10"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
