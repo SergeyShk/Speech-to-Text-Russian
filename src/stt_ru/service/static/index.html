@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stt-ru</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>stt-ru</h1>
+        <p class="muted" id="service">Распознавание русской речи</p>
+      </div>
+    </div>
+    <a class="link" href="/docs" target="_blank" rel="noopener">REST API</a>
+  </header>
+
+  <main class="layout">
+    <aside class="side">
+      <form class="card" id="token-form" hidden>
+        <h2>Токен доступа</h2>
+        <p class="muted">Сервис запущен с токеном. Его выдает администратор сервиса.</p>
+        <input type="password" id="token" autocomplete="current-password" required>
+        <button type="submit" class="button primary">Войти</button>
+        <p class="error" id="token-error" hidden>Неверный токен</p>
+      </form>
+
+      <section class="card" id="upload">
+        <h2>Новая запись</h2>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="audio/*,video/*">
+          <strong>Перетащите файл сюда</strong>
+          <span class="muted">или нажмите, чтобы выбрать</span>
+          <span class="muted small" id="limits"></span>
+        </label>
+        <div class="progress" id="progress" hidden><div id="progress-bar"></div></div>
+        <p class="error" id="upload-error" hidden></p>
+      </section>
+
+      <section class="card">
+        <h2>Задачи</h2>
+        <p class="muted small" id="empty">Загруженные в этом браузере записи появятся здесь.</p>
+        <ul class="jobs" id="jobs"></ul>
+      </section>
+    </aside>
+
+    <section class="content" id="content">
+      <div class="placeholder" id="placeholder">
+        <p>Загрузите запись разговора, диктовки или лекции.</p>
+        <p class="muted">Каналы стереозаписи распознаются отдельно: каждый канал - свой говорящий.</p>
+      </div>
+
+      <article class="card result" id="result" hidden>
+        <div class="result-head">
+          <div>
+            <h2 id="title"></h2>
+            <p class="muted" id="details"></p>
+          </div>
+          <button type="button" class="button danger" id="delete">Удалить</button>
+        </div>
+        <p class="status" id="status"></p>
+        <div id="player" hidden>
+          <canvas id="wave" height="120" aria-label="Форма волны"></canvas>
+          <audio id="audio" controls preload="metadata"></audio>
+          <p class="muted small" id="audio-error" hidden>Браузер не воспроизводит этот формат: форма волны и текст доступны.</p>
+        </div>
+        <div class="downloads" id="downloads" hidden></div>
+        <div class="table-wrap" id="segments-wrap" hidden>
+          <table>
+            <thead>
+              <tr><th>Начало</th><th>Конец</th><th>Говорящий</th><th>Текст</th></tr>
+            </thead>
+            <tbody id="segments"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

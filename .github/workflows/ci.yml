@@ -24,7 +24,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --locked --no-default-groups --group lint
+        run: uv sync --locked --no-default-groups --group lint --all-extras
       - name: Ruff
         run: |
           uv run --no-sync ruff check src tests conftest.py

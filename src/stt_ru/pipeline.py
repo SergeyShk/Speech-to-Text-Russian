@@ -87,15 +87,37 @@ class Transcriber:
             FileNotFoundError: Если файла нет
             AudioError: Если файл не читается
         """
+        return self.transcribe_audio(self.load(path), source=Path(path).name)
+
+    def load(self, path: str | os.PathLike[str], *, max_duration: float | None = None) -> Audio:
+        """
+        Чтение аудиофайла с частотой, которую принимает модель
+
+        Описание:
+            Файл с другой частотой передискретизируется в 16 кГц (см. load_audio)
+
+        Аргументы:
+            path (str): Путь к файлу
+            max_duration (float): Наибольшая длительность записи, с; None - без ограничения
+
+        Вывод:
+            Audio: Запись для transcribe_audio
+
+        Исключения:
+            FileNotFoundError: Если файла нет
+            AudioError: Если файл не читается или запись длиннее max_duration
+        """
         try:
             native: int | None = sf.info(os.fspath(path)).samplerate
         except sf.LibsndfileError:
             native = None
         rate = RESAMPLE_RATE if native is not None and native not in SAMPLE_RATES else None
-        audio = load_audio(path, sample_rate=rate, ffmpeg=self.ffmpeg)
+        audio = load_audio(path, sample_rate=rate, ffmpeg=self.ffmpeg, max_duration=max_duration)
         if audio.sample_rate not in SAMPLE_RATES:
-            audio = load_audio(path, sample_rate=RESAMPLE_RATE, ffmpeg=self.ffmpeg)
-        return self.transcribe_audio(audio, source=Path(path).name)
+            audio = load_audio(
+                path, sample_rate=RESAMPLE_RATE, ffmpeg=self.ffmpeg, max_duration=max_duration
+            )
+        return audio
 
     def transcribe_audio(self, audio: Audio, source: str | None = None) -> Transcript:
         """

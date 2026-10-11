@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import socket
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from importlib.metadata import version
@@ -41,6 +42,8 @@ from .result import Transcript
 from .vad import VadOptions
 
 INTERRUPTED = 130
+TOKEN_VARIABLE = "STT_RU_TOKEN"
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 DEVICES: dict[str, list[str] | None] = {
     "auto": None,
     "cpu": ["CPUExecutionProvider"],
@@ -115,8 +118,8 @@ def build_parser() -> ArgumentParser:
     parser = ArgumentParser(
         prog="stt-ru",
         usage="%(prog)s [-h] [--version] КОМАНДА ...",
-        description="Распознавание русской речи моделью GigaAM-v3 и другими моделями onnx-asr "
-        "и оценка качества моделей на своей разметке",
+        description="Распознавание русской речи моделью GigaAM-v3 и другими моделями onnx-asr: "
+        "файлы и каталоги, веб-интерфейс и REST API, оценка качества моделей на своей разметке",
     )
     parser.options.add_argument(
         "--version",
@@ -221,6 +224,71 @@ def build_parser() -> ArgumentParser:
         "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
     )
     _add_model_options(evaluate_parser, several=True)
+    serve_parser = commands.add_parser(
+        "serve",
+        help="запустить веб-интерфейс и REST API",
+        prog="stt-ru serve",
+        description="Веб-интерфейс и REST API: файлы ставятся в очередь и распознаются моделью, "
+        "загруженной один раз; результат скачивается в любом формате. Токен доступа "
+        f"задается переменной окружения {TOKEN_VARIABLE}. Задачи хранятся в памяти "
+        "и пропадают при перезапуске",
+    )
+    parser.commands["serve"] = serve_parser
+    server = serve_parser.add_argument_group("сервис")
+    server.add_argument(
+        "--host",
+        default="127.0.0.1",
+        metavar="АДРЕС",
+        help="адрес (по умолчанию 127.0.0.1 - только этот компьютер; 0.0.0.0 - все адреса)",
+    )
+    server.add_argument(
+        "--port", type=int, default=8000, metavar="ПОРТ", help="порт (по умолчанию 8000)"
+    )
+    server.add_argument(
+        "-j",
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="сколько файлов распознавать одновременно (по умолчанию 1)",
+    )
+    server.add_argument(
+        "--max-size",
+        type=float,
+        default=500,
+        metavar="МБ",
+        help="наибольший размер файла (по умолчанию 500 МБ)",
+    )
+    server.add_argument(
+        "--max-duration",
+        type=float,
+        default=180,
+        metavar="МИН",
+        help="наибольшая длительность записи (по умолчанию 180 минут)",
+    )
+    server.add_argument(
+        "--max-queue",
+        type=int,
+        default=100,
+        metavar="N",
+        help="сколько файлов может ждать в очереди (по умолчанию 100)",
+    )
+    server.add_argument(
+        "--keep",
+        type=float,
+        default=24,
+        metavar="Ч",
+        help="сколько часов хранить файл и результат после распознавания (по умолчанию 24)",
+    )
+    server.add_argument(
+        "--data-dir",
+        metavar="КАТАЛОГ",
+        help="каталог для загруженных файлов (по умолчанию системный временный)",
+    )
+    server.add_argument(
+        "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
+    )
+    _add_model_options(serve_parser, several=False)
     return parser
 
 
@@ -293,7 +361,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command is None:
         parser.print_help(sys.stderr)
         sys.exit(2)
-    command = {"transcribe": transcribe, "evaluate": evaluate}[args.command]
+    command = {"transcribe": transcribe, "evaluate": evaluate, "serve": serve}[args.command]
     try:
         command(parser.commands[args.command], args)
     except KeyboardInterrupt:
@@ -500,3 +568,107 @@ def evaluate(parser: ArgumentParser, args: argparse.Namespace) -> None:
             )
     if failed:
         sys.exit(1)
+
+
+def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
+    """
+    Команда serve
+
+    Описание:
+        Аргументы и зависимости проверяются до загрузки модели; сервис запускается
+        после загрузки модели
+
+    Аргументы:
+        parser (ArgumentParser): Разбор аргументов для сообщений об ошибках
+        args (argparse.Namespace): Разобранные аргументы
+    """
+    log: Log = ignore if args.quiet else log_to_stderr
+    try:
+        vad = _vad_options(args)
+        if not 0 < args.port < 65536:
+            parser.error(f"порт должен быть от 1 до 65535: {args.port}")
+        for option, value in (
+            ("--workers", args.workers),
+            ("--max-size", args.max_size),
+            ("--max-duration", args.max_duration),
+            ("--max-queue", args.max_queue),
+            ("--keep", args.keep),
+        ):
+            if value <= 0:
+                parser.error(f"{option} должен быть положительным: {value:g}")
+        if args.data_dir is not None and not Path(args.data_dir).is_dir():
+            parser.error(f"каталога нет: {args.data_dir}")
+        providers = _providers(parser, args.device)
+    except ParameterError as error:
+        parser.error(str(error))
+    try:
+        import uvicorn
+
+        from .service import JobQueue, create_app
+    except ImportError as error:
+        print(
+            f"stt-ru: ошибка: Для сервиса нужен пакет {error.name}: pip install 'stt-ru[service]'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    reason = _bind_error(args.host, args.port)
+    if reason is not None:
+        print(
+            f"stt-ru: ошибка: не удалось занять адрес {args.host}:{args.port}: {reason}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    token = os.environ.get(TOKEN_VARIABLE) or None
+    if token is None and args.host not in LOCAL_HOSTS:
+        print(
+            f"stt-ru: предупреждение: сервис доступен по сети без токена; задайте токен "
+            f"в переменной окружения {TOKEN_VARIABLE}",
+            file=sys.stderr,
+        )
+    log(f"Загрузка модели {args.model}...")
+    try:
+        transcriber = Transcriber(
+            args.model,
+            quantization=None if args.quantization.lower() == "none" else args.quantization,
+            model_dir=args.model_dir,
+            providers=providers,
+            vad=vad,
+            split_channels=not args.mono,
+            ffmpeg=args.ffmpeg,
+        )
+    except ModelError as error:
+        print(f"stt-ru: ошибка: {error}", file=sys.stderr)
+        sys.exit(1)
+    jobs = JobQueue(
+        transcriber,
+        args.data_dir,
+        workers=args.workers,
+        max_queue=args.max_queue,
+        max_duration=args.max_duration * 60,
+        keep=args.keep * 3600,
+        log=log,
+    )
+    app = create_app(jobs, token=token, max_size=int(args.max_size * (1 << 20)))
+    address = f"http://{f'[{args.host}]' if ':' in args.host else args.host}:{args.port}"
+    log(f"Веб-интерфейс: {address}, описание API: {address}/docs, Ctrl+C - выход")
+    try:
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="warning" if args.quiet else "info",
+            access_log=False,
+            timeout_graceful_shutdown=10,
+        )
+    finally:
+        jobs.close()
+
+
+def _bind_error(host: str, port: int) -> str | None:
+    # Проверка до загрузки модели: uvicorn сообщил бы о занятом порте только после нее
+    try:
+        family = socket.AF_INET6 if ":" in host else socket.AF_INET
+        with socket.create_server((host, port), family=family):
+            return None
+    except OSError as error:
+        return error.strerror or str(error)
