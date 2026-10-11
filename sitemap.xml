@@ -29,6 +29,13 @@
         <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/evaluation/"/>
     </url>
     <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/examples/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/examples/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/"/>
+    </url>
+    <url>
         <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/formats/</loc>
         <lastmod>2026-10-11</lastmod>
         <changefreq>daily</changefreq>
@@ -97,6 +104,13 @@
         <changefreq>daily</changefreq>
         <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/evaluation/"/>
         <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/evaluation/"/>
+    </url>
+    <url>
+        <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/</loc>
+        <lastmod>2026-10-11</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://sergeyshk.github.io/Speech-to-Text-Russian/examples/"/>
     </url>
     <url>
         <loc>https://sergeyshk.github.io/Speech-to-Text-Russian/en/formats/</loc>
