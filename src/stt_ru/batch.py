@@ -171,12 +171,16 @@ def _directory_jobs(directory: Path, recursive: bool, log: Log) -> list[Job]:
                 continue
             try:
                 info = file.stat()
-            except FileNotFoundError:
-                continue
             except OSError:
-                # Каталог читается, но не обходится (нет права x): его файлы недоступны
-                denied.append(root)
-                break
+                # Битая ссылка пропускается одна; не читается и lstat - у каталога нет права x
+                try:
+                    file.lstat()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    denied.append(root)
+                    break
+                continue
             if stat.S_ISREG(info.st_mode):
                 relative = file.relative_to(directory)
                 jobs.append(Job(file, relative.with_suffix(""), relative.as_posix()))

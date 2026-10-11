@@ -160,9 +160,30 @@ class TestFindJobs:
         assert find_jobs([tmp_path]) == []
 
     @pytest.mark.skipif(sys.platform == "win32", reason="символические ссылки требуют прав")
-    def test_broken_link_skipped(self, tmp_path):
+    def test_broken_links_skipped_alone(self, tmp_path):
         (tmp_path / "gone.wav").symlink_to(tmp_path / "missing.wav")
-        assert find_jobs([tmp_path]) == []
+        (tmp_path / "loop.wav").symlink_to(tmp_path / "loop.wav")
+        touch(tmp_path / "sub" / "a.wav")
+        (tmp_path / "sub" / "0-loop.wav").symlink_to(tmp_path / "sub" / "0-loop.wav")
+        touch(tmp_path / "z.wav")
+        messages = []
+        jobs = find_jobs([tmp_path], recursive=True, log=messages.append)
+        assert [job.label for job in jobs] == ["sub/a.wav", "z.wav"]
+        assert messages == []
+
+    @posix_permissions
+    def test_link_into_locked_directory_skipped_alone(self, tmp_path):
+        locked = tmp_path / "locked"
+        touch(locked / "x.wav")
+        folder = tmp_path / "in"
+        touch(folder / "a.wav")
+        (folder / "x.wav").symlink_to(locked / "x.wav")
+        locked.chmod(0)
+        try:
+            jobs = find_jobs([folder])
+        finally:
+            locked.chmod(0o755)
+        assert [job.label for job in jobs] == ["a.wav"]
 
     def test_same_names_allowed_without_saving(self, tmp_path):
         first, second = touch(tmp_path / "d1" / "a.wav"), touch(tmp_path / "d2" / "a.wav")
