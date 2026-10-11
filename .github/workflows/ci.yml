@@ -27,8 +27,8 @@ jobs:
         run: uv sync --locked --no-default-groups --group lint --all-extras
       - name: Ruff
         run: |
-          uv run --no-sync ruff check src tests conftest.py
-          uv run --no-sync ruff format src tests conftest.py --check
+          uv run --no-sync ruff check src tests notebooks conftest.py
+          uv run --no-sync ruff format src tests notebooks conftest.py --check
       - name: Mypy
         run: uv run --no-sync mypy
 

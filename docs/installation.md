@@ -79,7 +79,7 @@ pip install ".[ffmpeg,service,eval]"
 Для разработки удобнее [uv](https://docs.astral.sh/uv/): он создаст окружение со всеми зависимостями и инструментами разработки.
 
 ``` bash
-uv sync --all-groups --all-extras
+uv sync --all-groups --no-group notebooks --all-extras
 ```
 
 Порядок работы и проверки перед пул-реквестом описаны в [CONTRIBUTING.md](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/CONTRIBUTING.md).

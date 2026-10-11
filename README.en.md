@@ -21,6 +21,7 @@
   <a href="https://github.com/SergeyShk/Speech-to-Text-Russian/actions/workflows/ci.yml"><img src="https://github.com/SergeyShk/Speech-to-Text-Russian/actions/workflows/ci.yml/badge.svg" alt="Build"></a>
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
   <a href="https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/LICENSE.txt"><img src="https://img.shields.io/github/license/sergeyshk/speech-to-text-russian.svg" alt="License"></a>
+  <a href="https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/01_quickstart.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"></a>
 </p>
 
 ---
@@ -84,6 +85,8 @@ PosixPath('call.srt')
 ```
 
 The command messages and speaker names ("Канал N", Channel N) are in Russian.
+
+Example notebooks are in the [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks) directory: quick start, call analytics, a long recording and subtitles, model evaluation, the web service from Python. Each opens in Colab; descriptions are on the [Examples](https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/) page. The notebooks are in Russian.
 
 ## Docker
 

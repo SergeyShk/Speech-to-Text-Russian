@@ -1,0 +1,27 @@
+name: notebooks
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notebooks:
+    runs-on: ubuntu-latest
+    env:
+      HF_HOME: ${{ github.workspace }}/.hf
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --group notebooks
+      - name: Run notebooks
+        run: uv run --no-sync pytest --nbmake notebooks -p no:cacheprovider

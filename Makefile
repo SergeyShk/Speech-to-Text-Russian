@@ -1,7 +1,8 @@
-.PHONY: help uv deps lock lint ruff format mypy test test-cov clean clean-build clean-pyc clean-test build publish publish-test docs-build docs-serve docs-deploy docker docker-gpu
+.PHONY: help uv deps lock lint ruff format mypy test test-cov clean clean-build clean-pyc clean-test build publish publish-test docs-build docs-serve docs-deploy docker docker-gpu notebooks
 .DEFAULT_GOAL := help
 SRC_PATH := src
 TESTS_PATH := tests
+NOTEBOOKS_PATH := notebooks
 PACKAGE := stt_ru
 
 help: ## Показать список команд
@@ -15,9 +16,9 @@ uv: ## Проверить наличие uv
 
 deps: uv ## Установить зависимости
 ifeq ($(MODE), ci)
-	uv sync --locked --all-groups
+	uv sync --locked --all-groups --no-group notebooks
 else
-	uv sync --all-groups
+	uv sync --all-groups --no-group notebooks
 endif
 
 lock: uv ## Обновить lock-файл до последних версий зависимостей
@@ -27,15 +28,15 @@ lint: ruff mypy ## Запустить все проверки кода
 
 ruff: deps ## Проверить и отформатировать код с помощью ruff
 ifeq ($(MODE), ci)
-	uv run ruff check $(SRC_PATH) $(TESTS_PATH) conftest.py
-	uv run ruff format $(SRC_PATH) $(TESTS_PATH) conftest.py --check
+	uv run ruff check $(SRC_PATH) $(TESTS_PATH) $(NOTEBOOKS_PATH) conftest.py
+	uv run ruff format $(SRC_PATH) $(TESTS_PATH) $(NOTEBOOKS_PATH) conftest.py --check
 else
-	uv run ruff check $(SRC_PATH) $(TESTS_PATH) conftest.py --fix
-	uv run ruff format $(SRC_PATH) $(TESTS_PATH) conftest.py
+	uv run ruff check $(SRC_PATH) $(TESTS_PATH) $(NOTEBOOKS_PATH) conftest.py --fix
+	uv run ruff format $(SRC_PATH) $(TESTS_PATH) $(NOTEBOOKS_PATH) conftest.py
 endif
 
 format: deps ## Отформатировать код
-	uv run ruff format $(SRC_PATH) $(TESTS_PATH) conftest.py
+	uv run ruff format $(SRC_PATH) $(TESTS_PATH) $(NOTEBOOKS_PATH) conftest.py
 
 mypy: deps ## Проверить типы с помощью mypy
 	uv run mypy
@@ -81,6 +82,11 @@ docs-serve: deps ## Запустить сервер документации
 
 docs-deploy: deps ## Задеплоить документацию
 	uv run mkdocs gh-deploy
+
+notebooks: uv ## Выполнить ноутбуки из notebooks/ и записать вывод в файлы
+	uv sync --all-extras --group notebooks
+	uv run pytest --nbmake --overwrite $(NOTEBOOKS_PATH) -p no:cacheprovider
+	uv run nbstripout --keep-output --keep-count --extra-keys metadata.language_info.version $(NOTEBOOKS_PATH)/*.ipynb
 
 docker: ## Собрать Docker-образ для CPU
 	docker build -f docker/Dockerfile -t stt-ru .

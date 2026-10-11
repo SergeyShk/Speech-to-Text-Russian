@@ -21,6 +21,7 @@
   <a href="https://github.com/SergeyShk/Speech-to-Text-Russian/actions/workflows/ci.yml"><img src="https://github.com/SergeyShk/Speech-to-Text-Russian/actions/workflows/ci.yml/badge.svg" alt="Сборка"></a>
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
   <a href="https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/LICENSE.txt"><img src="https://img.shields.io/github/license/sergeyshk/speech-to-text-russian.svg" alt="Лицензия"></a>
+  <a href="https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/01_quickstart.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"></a>
 </p>
 
 ---
@@ -82,6 +83,8 @@ stt-ru serve                                                     # http://127.0.
 >>> result.save("call.srt")
 PosixPath('call.srt')
 ```
+
+Ноутбуки с примерами - в каталоге [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks): быстрый старт, аналитика звонка, длинная запись и субтитры, оценка моделей, веб-сервис из Python. Каждый открывается в Colab, описания - на странице [Примеры](https://sergeyshk.github.io/Speech-to-Text-Russian/examples/).
 
 ## Docker
 

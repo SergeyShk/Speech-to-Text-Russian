@@ -12,6 +12,12 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
 
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        args: [--keep-output, --keep-count, --extra-keys, metadata.language_info.version]
+
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.12.12
     hooks:
@@ -23,14 +29,14 @@ repos:
         name: ruff check
         language: system
         entry: uv run ruff check --force-exclude --fix
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
         require_serial: true
 
       - id: ruff-format
         name: ruff format
         language: system
         entry: uv run ruff format --force-exclude
-        types_or: [python, pyi, markdown]
+        types_or: [python, pyi, jupyter, markdown]
         require_serial: true
 
       - id: mypy
