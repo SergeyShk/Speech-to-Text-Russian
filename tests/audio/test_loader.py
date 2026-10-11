@@ -200,8 +200,34 @@ class TestMaxDuration:
         monkeypatch.setattr(loader.subprocess, "run", spy)
         with pytest.raises(AudioError, match="Запись длиннее 2 с"):
             load_audio(path, max_duration=2)
-        assert commands[0][commands[0].index("-t") + 1] == "3"
+        assert commands[0][commands[0].index("-t") + 1] == "3.000"
         assert load_audio(path, max_duration=40).duration == pytest.approx(30, abs=0.1)
+
+    def test_mp3_header_not_trusted(self, tmp_path, monkeypatch):
+        path = tmp_path / "call.mp3"
+        sf.write(path, stereo(), 8000, format="MP3")
+        checks = []
+        check = loader._check_duration
+
+        def spy(duration, limit):
+            checks.append((duration, limit))
+            check(duration, limit)
+
+        monkeypatch.setattr(loader, "_check_duration", spy)
+        audio = load_audio(path, max_duration=1.5)
+        assert checks == [(audio.duration, 1.5)]
+
+    def test_large_limit_for_ffmpeg(self, m4a, monkeypatch):
+        commands = []
+        run = subprocess.run
+
+        def spy(command, **kwargs):
+            commands.append(command)
+            return run(command, **kwargs)
+
+        monkeypatch.setattr(loader.subprocess, "run", spy)
+        assert load_audio(m4a, max_duration=1_200_000).duration == pytest.approx(1.0, abs=0.05)
+        assert commands[0][commands[0].index("-t") + 1] == "1200001.000"
 
     def test_unknown_length(self, pipe_flac):
         with pytest.raises(AudioError, match=r"Запись длиннее 0\.25 с"):

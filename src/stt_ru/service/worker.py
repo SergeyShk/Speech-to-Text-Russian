@@ -1,3 +1,4 @@
+import contextlib
 import queue
 import re
 import secrets
@@ -151,7 +152,7 @@ class JobQueue:
             shutil.rmtree(folder, ignore_errors=True)
             raise
         job = Job(job_id, name, path, path.stat().st_size, self.clock())
-        self.log(f"[{job_id}] {name}: в очереди")
+        self._say(f"[{job_id}] {name}: в очереди")
         with self._lock:
             self._jobs[job_id] = job
         self._pending.put(job_id)
@@ -224,7 +225,7 @@ class JobQueue:
                 return True
             del self._jobs[job_id]
         shutil.rmtree(job.path.parent, ignore_errors=True)
-        self.log(f"[{job_id}] {job.filename}: удалена")
+        self._say(f"[{job_id}] {job.filename}: удалена")
         return True
 
     def cleanup(self) -> int:
@@ -254,6 +255,11 @@ class JobQueue:
         # В Windows файл, который еще читает поток распознавания, не удаляется
         shutil.rmtree(self.directory, ignore_errors=True)
 
+    def _say(self, message: str) -> None:
+        # Ошибка вывода (закрытый stderr) не должна останавливать поток распознавания
+        with contextlib.suppress(Exception):
+            self.log(message)
+
     def _waiting(self) -> int:
         return sum(1 for job in self._jobs.values() if job.status == "queued" and not job.deleted)
 
@@ -275,16 +281,20 @@ class JobQueue:
                 job.duration, job.channels, job.peaks = audio.duration, audio.num_channels, peaks
             transcript = self.transcriber.transcribe_audio(audio, source=job.filename)
         except Exception as error:
+            text = str(error) or type(error).__name__
+            # Клиенту не нужен путь к файлу на сервере
+            for path in (str(job.path.resolve()), str(job.path)):
+                text = text.replace(path, job.filename)
             with self._lock:
-                job.error, job.finished = str(error) or type(error).__name__, self.clock()
+                job.error, job.finished = text, self.clock()
                 job.status = "failed"
-            self.log(f"[{job.id}] {job.filename}: ошибка - {job.error}")
+            self._say(f"[{job.id}] {job.filename}: ошибка - {job.error}")
         else:
             with self._lock:
                 job.transcript, job.finished = transcript, self.clock()
                 job.status = "done"
             seconds = job.finished - (job.started or job.finished)
-            self.log(
+            self._say(
                 f"[{job.id}] {job.filename}: фрагментов {len(transcript.segments)}, "
                 f"{transcript.duration:.1f} с записи за {seconds:.1f} с"
             )

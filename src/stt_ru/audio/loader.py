@@ -221,9 +221,23 @@ def load_audio(
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"Файл не найден: {source}")
+    audio = _read(source, sample_rate, ffmpeg, max_duration)
+    if max_duration is not None:
+        _check_duration(audio.duration, max_duration)
+    return audio
+
+
+def _read(
+    source: Path,
+    sample_rate: int | None,
+    ffmpeg: str | os.PathLike[str] | None,
+    max_duration: float | None,
+) -> Audio:
     try:
         with sf.SoundFile(source) as file:
-            if max_duration is not None and 0 < file.frames < _UNKNOWN_FRAMES:
+            # Длина MP3 в заголовке - оценка: ее ограничивает ffmpeg (-t) или проверка после чтения
+            known = 0 < file.frames < _UNKNOWN_FRAMES and file.format != "MP3"
+            if max_duration is not None and known:
                 _check_duration(file.frames / file.samplerate, max_duration)
             reason = _ffmpeg_reason(file, sample_rate, ffmpeg)
             if reason is None:
@@ -232,10 +246,7 @@ def load_audio(
     except sf.LibsndfileError as error:
         reason = f"формат не читается библиотекой soundfile ({error})"
     decoded, rate = _decode(source, sample_rate, _require_ffmpeg(ffmpeg, reason), max_duration)
-    audio = Audio(decoded, rate)
-    if max_duration is not None:
-        _check_duration(audio.duration, max_duration)
-    return audio
+    return Audio(decoded, rate)
 
 
 def _check_duration(duration: float, limit: float) -> None:
@@ -279,7 +290,7 @@ def _decode(
             command += ["-ar", str(sample_rate)]
         if max_duration is not None:
             # Секунда сверх предела отличает слишком длинную запись от записи ровно на предел
-            command += ["-t", f"{max_duration + 1:g}"]
+            command += ["-t", f"{max_duration + 1:.3f}"]
         command.append(str(output))
         try:
             result = subprocess.run(

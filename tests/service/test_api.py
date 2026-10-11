@@ -51,6 +51,12 @@ class TestPage:
         response = client.get(f"/static/{name}")
         assert response.status_code == 200
         assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["cache-control"] == "no-cache"
+        again = client.get(f"/static/{name}", headers={"If-None-Match": response.headers["etag"]})
+        assert again.status_code == 304
+
+    def test_api_not_marked_static(self, client):
+        assert "cache-control" not in client.get("/healthz").headers
 
     def test_health(self, client):
         assert client.get("/healthz").json() == {"status": "ok"}

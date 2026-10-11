@@ -342,14 +342,14 @@ class _Guard:
             await self.app(scope, receive, send)
             return
 
+        extra = [(b"x-content-type-options", b"nosniff"), (b"referrer-policy", b"no-referrer")]
+        if scope["path"].startswith("/static/"):
+            # Без проверки браузер после обновления пакета возьмет старый app.js из кэша
+            extra.append((b"cache-control", b"no-cache"))
+
         async def secure(message: Message) -> None:
             if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers += [
-                    (b"x-content-type-options", b"nosniff"),
-                    (b"referrer-policy", b"no-referrer"),
-                ]
-                message = {**message, "headers": headers}
+                message = {**message, "headers": [*message.get("headers", []), *extra]}
             await send(message)
 
         if scope["method"] != "POST" or scope["path"] != UPLOAD_PATH:

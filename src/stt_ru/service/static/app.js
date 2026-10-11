@@ -3,6 +3,8 @@
 const STORAGE = "stt-ru-jobs";
 const COOKIE = "stt_ru_token";
 const POLL_MS = 1500;
+// Готовые задачи проверяются реже: их могут удалить через API или по сроку хранения
+const FINISHED_EVERY = 20;
 const ACTIVE = new Set(["queued", "running"]);
 const STATUS = { queued: "в очереди", running: "распознается", done: "готово", failed: "ошибка" };
 
@@ -18,6 +20,7 @@ const state = {
   playing: [],
   frame: 0,
   polling: false,
+  tick: 0,
 };
 
 function storedIds() {
@@ -194,27 +197,37 @@ function renderList() {
   }
 }
 
+function forget(id) {
+  state.jobs.delete(id);
+  storeIds();
+  if (state.current === id) closeJob();
+}
+
 async function refresh(id) {
   try {
     const response = await api(`/v1/jobs/${encodeURIComponent(id)}`);
-    if (response.status === 404) {
-      state.jobs.delete(id);
-      storeIds();
-      if (state.current === id) closeJob();
-      return;
-    }
-    if (response.ok) state.jobs.set(id, await response.json());
+    if (response.status === 404) forget(id);
+    else if (response.ok) state.jobs.set(id, await response.json());
   } catch {
     // Сервис недоступен: следующий опрос повторит запрос
   }
 }
 
 async function poll() {
-  const ids = [...state.jobs].filter(([, job]) => !job || ACTIVE.has(job.status)).map(([id]) => id);
-  await Promise.all(ids.map(refresh));
-  renderList();
-  if (state.current) await renderJob();
-  setTimeout(poll, POLL_MS);
+  try {
+    const everything = state.tick % FINISHED_EVERY === 0;
+    state.tick += 1;
+    const ids = [...state.jobs]
+      .filter(([id, job]) => everything || id === state.current || !job || ACTIVE.has(job.status))
+      .map(([id]) => id);
+    await Promise.all(ids.map(refresh));
+    renderList();
+    if (state.current) await renderJob();
+  } catch {
+    // Ошибка одного опроса не должна останавливать следующие
+  } finally {
+    setTimeout(poll, POLL_MS);
+  }
 }
 
 function closeJob() {
@@ -284,8 +297,11 @@ async function renderJob() {
 async function loadWaveform(id) {
   if (state.waveform) return;
   const response = await api(`/v1/jobs/${encodeURIComponent(id)}/waveform`);
+  if (response.status === 404) forget(id);
   if (!response.ok || state.current !== id) return;
-  state.waveform = await response.json();
+  const waveform = await response.json();
+  if (state.current !== id) return;
+  state.waveform = waveform;
   const audio = $("audio");
   audio.src = `/v1/jobs/${encodeURIComponent(id)}/audio`;
   $("player").hidden = false;
@@ -294,8 +310,10 @@ async function loadWaveform(id) {
 
 async function loadResult(id) {
   const response = await api(`/v1/jobs/${encodeURIComponent(id)}/result?format=json`);
+  if (response.status === 404) forget(id);
   if (!response.ok || state.current !== id) return;
   const result = await response.json();
+  if (state.current !== id) return;
   state.segments = result.segments;
   renderDownloads(id);
   renderSegments();

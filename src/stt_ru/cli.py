@@ -6,6 +6,7 @@ import os
 import re
 import socket
 import sys
+import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -283,7 +284,7 @@ def build_parser() -> ArgumentParser:
     server.add_argument(
         "--data-dir",
         metavar="КАТАЛОГ",
-        help="каталог для загруженных файлов (по умолчанию системный временный)",
+        help="каталог для загруженных и временных файлов (по умолчанию системный временный)",
     )
     server.add_argument(
         "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
@@ -575,14 +576,15 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
     Команда serve
 
     Описание:
-        Аргументы и зависимости проверяются до загрузки модели; сервис запускается
-        после загрузки модели
+        Аргументы, зависимости и адрес проверяются до загрузки модели; сервис запускается
+        после загрузки модели. Закрытый stderr не останавливает сервис
 
     Аргументы:
         parser (ArgumentParser): Разбор аргументов для сообщений об ошибках
         args (argparse.Namespace): Разобранные аргументы
     """
-    log: Log = ignore if args.quiet else log_to_stderr
+    warn = _tolerant(log_to_stderr)
+    log = ignore if args.quiet else warn
     try:
         vad = _vad_options(args)
         if not 0 < args.port < 65536:
@@ -620,10 +622,9 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
         sys.exit(1)
     token = os.environ.get(TOKEN_VARIABLE) or None
     if token is None and args.host not in LOCAL_HOSTS:
-        print(
+        warn(
             f"stt-ru: предупреждение: сервис доступен по сети без токена; задайте токен "
-            f"в переменной окружения {TOKEN_VARIABLE}",
-            file=sys.stderr,
+            f"в переменной окружения {TOKEN_VARIABLE}"
         )
     log(f"Загрузка модели {args.model}...")
     try:
@@ -649,6 +650,10 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
         log=log,
     )
     app = create_app(jobs, token=token, max_size=int(args.max_size * (1 << 20)))
+    previous = tempfile.tempdir
+    if args.data_dir is not None:
+        # Туда же - тело загрузки, которое разбирает Starlette, и WAV, который пишет ffmpeg
+        tempfile.tempdir = str(jobs.directory)
     address = f"http://{f'[{args.host}]' if ':' in args.host else args.host}:{args.port}"
     log(f"Веб-интерфейс: {address}, описание API: {address}/docs, Ctrl+C - выход")
     try:
@@ -661,7 +666,17 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             timeout_graceful_shutdown=10,
         )
     finally:
+        tempfile.tempdir = previous
         jobs.close()
+
+
+def _tolerant(log: Log) -> Log:
+    def write(message: str) -> None:
+        # Сервис работает и тогда, когда stderr закрыт: конвейер в head, закрытый терминал
+        with contextlib.suppress(OSError, ValueError):
+            log(message)
+
+    return write
 
 
 def _bind_error(host: str, port: int) -> str | None:

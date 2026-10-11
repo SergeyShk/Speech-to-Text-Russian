@@ -4,6 +4,7 @@ import json
 import runpy
 import socket
 import sys
+import tempfile
 from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
@@ -622,7 +623,7 @@ class TestServe:
 
         def run(app, **kwargs):
             jobs = app.state.settings.jobs
-            runs.append((app.state.settings, kwargs, jobs.directory.is_dir()))
+            runs.append((app.state.settings, kwargs, jobs.directory.is_dir(), tempfile.tempdir))
 
         monkeypatch.setattr(uvicorn, "run", run)
         monkeypatch.setattr(cli, "_bind_error", lambda host, port: None)
@@ -630,8 +631,10 @@ class TestServe:
         return runs
 
     def test_defaults(self, fake, server, capsys):
+        before = tempfile.tempdir
         main(["serve"])
-        ((settings, kwargs, existed),) = server
+        ((settings, kwargs, existed, temporary),) = server
+        assert temporary == before
         assert kwargs == {
             "host": "127.0.0.1",
             "port": 8000,
@@ -660,6 +663,7 @@ class TestServe:
         assert "без токена" not in err
 
     def test_options(self, fake, server, tmp_path, capsys):
+        before = tempfile.tempdir
         main(
             [
                 "serve", "--host", "0.0.0.0", "--port", "9000", "-j", "2", "--max-size", "1.5",
@@ -667,7 +671,9 @@ class TestServe:
                 str(tmp_path), "-q", "-m", "t-tech/t-one", "--mono", "--device", "cpu",
             ]
         )  # fmt: skip
-        ((settings, kwargs, _),) = server
+        ((settings, kwargs, _, temporary),) = server
+        assert temporary == str(settings.jobs.directory)
+        assert tempfile.tempdir == before
         assert (kwargs["host"], kwargs["port"], kwargs["log_level"]) == (
             "0.0.0.0",
             9000,
@@ -691,6 +697,15 @@ class TestServe:
         main(["serve", "--host", "0.0.0.0", "-q"])
         assert server[0][0].token == "секрет"
         assert capsys.readouterr().err == ""
+
+    def test_closed_stderr(self, fake, server, monkeypatch):
+        class Closed(io.StringIO):
+            def write(self, text):
+                raise BrokenPipeError
+
+        monkeypatch.setattr(sys, "stderr", Closed())
+        main(["serve", "--host", "0.0.0.0"])
+        assert len(server) == 1
 
     def test_ipv6(self, fake, server, capsys):
         main(["serve", "--host", "::1"])

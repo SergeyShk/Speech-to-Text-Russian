@@ -62,8 +62,21 @@ class TestJobQueue:
         job = jobs.submit("broken.wav", io.BytesIO(b"not audio"))
         failed = wait(jobs, job.id)
         assert failed.status == "failed"
-        assert failed.error.startswith("ffmpeg не прочитал файл") or "soundfile" in failed.error
+        assert failed.error.startswith("ffmpeg не прочитал файл broken.wav: ")
+        assert str(jobs.directory.name) not in failed.error and "source" not in failed.error
         assert failed.duration is None
+
+    def test_broken_log(self, jobs):
+        def log(message):
+            raise BrokenPipeError(32, "Broken pipe")
+
+        jobs.log = log
+        first = submit(jobs)
+        assert wait(jobs, first.id).status == "done"
+        second = submit(jobs)
+        assert wait(jobs, second.id).status == "done"
+        assert jobs.delete(first.id)
+        assert all(thread.is_alive() for thread in jobs._threads)
 
     def test_transcription_error(self, jobs):
         failed = wait(jobs, submit(jobs, "broken.wav").id)
