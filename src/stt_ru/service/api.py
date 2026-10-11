@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import mimetypes
 import secrets
 from collections.abc import AsyncIterator
@@ -47,6 +48,9 @@ PAGE_POLICY = (
     "default-src 'self'; img-src 'self'; media-src 'self'; object-src 'none'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
+# Ответы API и загруженные файлы не исполняются как страница, даже если это HTML или SVG
+DATA_POLICY = b"default-src 'none'; sandbox"
+TOKEN_REQUIRED = "Нужен токен доступа"
 
 
 class JobInfo(BaseModel):
@@ -103,9 +107,10 @@ def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 
     Описание:
         Страница - на /, REST API - на /v1, описание API - на /docs. Если задан token,
         запросы к задачам требуют заголовок Authorization: Bearer <token> или cookie
-        stt_ru_token (ее ставит страница). Файл больше max_size отклоняется во время
-        загрузки. Не реже раза в минуту удаляются задачи, срок хранения которых вышел;
-        при остановке приложения очередь закрывается
+        stt_ru_token (ее ставит страница). Загрузка без токена и в заполненную очередь
+        отклоняется до чтения файла, файл больше max_size - во время загрузки. Не реже
+        раза в минуту удаляются задачи, срок хранения которых вышел; при остановке
+        приложения очередь закрывается
 
     Аргументы:
         jobs (JobQueue): Очередь задач
@@ -161,7 +166,7 @@ def _authorized(request: Request, settings: _Settings) -> bool:
 
 def _authorize(request: Request, settings: Settings) -> None:
     if not _authorized(request, settings):
-        raise HTTPException(401, "Нужен токен доступа", {"WWW-Authenticate": "Bearer"})
+        raise HTTPException(401, TOKEN_REQUIRED, {"WWW-Authenticate": "Bearer"})
 
 
 def _find(settings: _Settings, job_id: str) -> Job:
@@ -294,11 +299,17 @@ def get_waveform(job_id: str, settings: Settings) -> Waveform:
 )
 def get_audio(job_id: str, settings: Settings) -> FileResponse:
     job = _find(settings, job_id)
-    media_type = mimetypes.guess_type(job.filename)[0] or "application/octet-stream"
+    media_type = mimetypes.guess_type(job.filename)[0] or ""
+    # Плееру нужен звук или видео; остальное отдается как файл, а не как страница
+    playable = media_type.startswith(("audio/", "video/"))
     return FileResponse(
         job.path,
-        media_type=media_type,
-        headers={"Content-Disposition": _disposition("inline", job.filename)},
+        media_type=media_type if playable else "application/octet-stream",
+        headers={
+            "Content-Disposition": _disposition(
+                "inline" if playable else "attachment", job.filename
+            )
+        },
     )
 
 
@@ -343,17 +354,31 @@ class _Guard:
             return
 
         extra = [(b"x-content-type-options", b"nosniff"), (b"referrer-policy", b"no-referrer")]
-        if scope["path"].startswith("/static/"):
+        path = scope["path"]
+        if path.startswith("/static/"):
             # Без проверки браузер после обновления пакета возьмет старый app.js из кэша
             extra.append((b"cache-control", b"no-cache"))
+        if path != "/" and not path.startswith("/docs"):
+            extra.append((b"content-security-policy", DATA_POLICY))
 
         async def secure(message: Message) -> None:
             if message["type"] == "http.response.start":
                 message = {**message, "headers": [*message.get("headers", []), *extra]}
             await send(message)
 
-        if scope["method"] != "POST" or scope["path"] != UPLOAD_PATH:
+        if scope["method"] != "POST" or path != UPLOAD_PATH:
             await self.app(scope, receive, secure)
+            return
+        # Иначе FastAPI прочитает и запишет на диск все тело загрузки до проверки токена
+        settings: _Settings = scope["app"].state.settings
+        refusal = None
+        if not _authorized(Request(scope), settings):
+            refusal = JSONResponse({"detail": TOKEN_REQUIRED}, 401, {"WWW-Authenticate": "Bearer"})
+        elif settings.jobs.full():
+            detail = f"Очередь заполнена: задач в ней {settings.jobs.max_queue}"
+            refusal = JSONResponse({"detail": detail}, 503, {"Retry-After": "60"})
+        if refusal is not None:
+            await refusal(scope, receive, secure)
             return
         length = dict(scope["headers"]).get(b"content-length")
         limit = self.max_body - UPLOAD_OVERHEAD
@@ -370,4 +395,10 @@ class _Guard:
                 raise HTTPException(413, _too_large(limit))
             return message
 
-        await self.app(scope, counted, secure)
+        try:
+            await self.app(scope, counted, secure)
+        except asyncio.CancelledError:
+            # uvicorn отменяет незаконченную загрузку при остановке: ответ без трассировки
+            with contextlib.suppress(Exception):
+                stopping = JSONResponse({"detail": "Сервис останавливается"}, 503)
+                await stopping(scope, receive, secure)

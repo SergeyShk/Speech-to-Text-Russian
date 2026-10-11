@@ -1,12 +1,13 @@
 import io
+import sys
 import threading
 
 import pytest
 
 from stt_ru.exceptions import ParameterError
-from stt_ru.service import JobQueue, QueueFullError
+from stt_ru.service import JobQueue, QueueFullError, worker
 
-from .conftest import wait, wav_bytes
+from .conftest import job_folders, wait, wav_bytes
 
 
 class Clock:
@@ -109,7 +110,7 @@ class TestJobQueue:
             assert jobs.position("missing") is None
             with pytest.raises(QueueFullError, match="Очередь заполнена: задач в ней 2"):
                 submit(jobs)
-            assert len(list(jobs.directory.iterdir())) == 3
+            assert len(job_folders(jobs)) == 3
             assert jobs.delete(first.id)
             assert jobs.position(second.id) == 0
             transcriber.gate.set()
@@ -161,7 +162,7 @@ class TestJobQueue:
             clock.now += 1
             assert jobs.cleanup() == 2
             assert jobs.get(done.id) is None
-            assert list(jobs.directory.iterdir()) == []
+            assert job_folders(jobs) == []
         finally:
             jobs.close()
 
@@ -176,7 +177,7 @@ class TestJobQueue:
 
         with pytest.raises(OSError, match="диск заполнен"):
             jobs.submit("call.wav", Broken())
-        assert list(jobs.directory.iterdir()) == []
+        assert job_folders(jobs) == []
 
     def test_close(self, transcriber, tmp_path):
         jobs = JobQueue(transcriber, tmp_path, workers=2)
@@ -198,13 +199,111 @@ class TestJobQueue:
     @pytest.mark.parametrize(
         ("options", "message"),
         [
-            ({"workers": 0}, "workers должен быть положительным: 0"),
+            ({"workers": 0}, "workers должен быть положительным числом: 0"),
             ({"max_queue": 0}, "max_queue"),
             ({"keep": 0}, "keep"),
             ({"max_duration": 0}, "max_duration"),
+            ({"keep": float("inf")}, "keep должен быть положительным числом: inf"),
+            ({"max_duration": float("nan")}, "max_duration должен быть положительным числом"),
         ],
     )
     def test_wrong_options(self, transcriber, tmp_path, options, message):
         with pytest.raises(ParameterError, match=message):
             JobQueue(transcriber, tmp_path, **options)
         assert list(tmp_path.iterdir()) == []
+
+
+class SlowContent(io.BytesIO):
+    """Загрузка, которая не кончается, пока не открыт gate"""
+
+    def __init__(self, gate):
+        super().__init__(wav_bytes())
+        self.gate = gate
+
+    def read(self, size=-1):
+        self.gate.wait(5)
+        return super().read(size)
+
+
+def test_errors_logged_separately(transcriber, tmp_path):
+    messages, errors = [], []
+    jobs = JobQueue(transcriber, tmp_path, log=messages.append, errors=errors.append)
+    try:
+        failed = wait(jobs, submit(jobs, "broken.wav").id)
+    finally:
+        jobs.close()
+    assert errors == [f"[{failed.id}] broken.wav: ошибка - модель не приняла запись"]
+    assert not any("ошибка" in message for message in messages)
+
+
+def test_place_reserved_while_uploading(transcriber, tmp_path):
+    transcriber.gate.clear()
+    jobs = JobQueue(transcriber, tmp_path, max_queue=1)
+    gate = threading.Event()
+    try:
+        running = submit(jobs)
+        wait(jobs, running.id, ("running",))
+        uploading = threading.Thread(target=jobs.submit, args=("slow.wav", SlowContent(gate)))
+        uploading.start()
+        while not jobs.full():
+            pass
+        with pytest.raises(QueueFullError):
+            submit(jobs)
+        gate.set()
+        uploading.join(5)
+        assert jobs.full()
+        assert len(job_folders(jobs)) == 2
+    finally:
+        gate.set()
+        transcriber.gate.set()
+        jobs.close()
+
+
+def test_failed_upload_frees_place(transcriber, tmp_path):
+    class Broken(io.BytesIO):
+        def read(self, size=-1):
+            raise OSError("соединение оборвалось")
+
+    jobs = JobQueue(transcriber, tmp_path, max_queue=1)
+    try:
+        with pytest.raises(OSError, match="соединение оборвалось"):
+            jobs.submit("a.wav", Broken())
+        assert not jobs.full()
+        assert job_folders(jobs) == []
+    finally:
+        jobs.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="блокировки flock в Windows нет")
+class TestStaleDirectories:
+    def test_crashed_run_removed(self, transcriber, tmp_path):
+        crashed = tmp_path / "stt-ru-crashed"
+        (crashed / "job").mkdir(parents=True)
+        (crashed / worker.LOCK).write_text("", encoding="utf-8")
+        (crashed / "job" / "source.wav").write_bytes(b"audio")
+        messages = []
+        jobs = JobQueue(transcriber, tmp_path, log=messages.append)
+        jobs.close()
+        assert not crashed.exists()
+        assert messages == ["Удалены файлы прошлых запусков, завершившихся аварийно: 1"]
+
+    def test_running_and_foreign_kept(self, transcriber, tmp_path):
+        foreign = tmp_path / "stt-ru-foreign"
+        foreign.mkdir()
+        alive = JobQueue(transcriber, tmp_path)
+        try:
+            second = JobQueue(transcriber, tmp_path)
+            second.close()
+            assert alive.directory.is_dir() and foreign.is_dir()
+        finally:
+            alive.close()
+
+
+def test_without_flock(transcriber, tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+    jobs = JobQueue(transcriber, tmp_path)
+    try:
+        assert wait(jobs, submit(jobs).id).status == "done"
+    finally:
+        jobs.close()
+    assert list(tmp_path.iterdir()) == []

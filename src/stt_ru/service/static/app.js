@@ -21,6 +21,7 @@ const state = {
   frame: 0,
   polling: false,
   tick: 0,
+  listed: null,
 };
 
 function storedIds() {
@@ -124,14 +125,21 @@ async function login(event) {
   start();
 }
 
-function uploadOne(file) {
+function showUploadErrors(errors) {
+  const box = $("upload-error");
+  box.textContent = errors.join("\n");
+  box.hidden = errors.length === 0;
+}
+
+function uploadOne(file, errors) {
   return new Promise((resolve) => {
-    const error = $("upload-error");
-    error.hidden = true;
-    if (state.info && file.size > state.info.max_size) {
-      error.textContent = `${file.name}: файл больше ${megabytes(state.info.max_size)}`;
-      error.hidden = false;
+    const fail = (message) => {
+      errors.push(`${file.name}: ${message}`);
+      showUploadErrors(errors);
       resolve();
+    };
+    if (state.info && file.size > state.info.max_size) {
+      fail(`файл больше ${megabytes(state.info.max_size)}`);
       return;
     }
     const form = new FormData();
@@ -156,27 +164,31 @@ function uploadOne(file) {
       } else if (xhr.status === 401) {
         showToken();
       } else {
-        const message = xhr.response && typeof xhr.response.detail === "string" ? xhr.response.detail : `Ошибка ${xhr.status}`;
-        error.textContent = `${file.name}: ${message}`;
-        error.hidden = false;
+        fail(xhr.response && typeof xhr.response.detail === "string" ? xhr.response.detail : `Ошибка ${xhr.status}`);
+        return;
       }
       resolve();
     };
     xhr.onerror = () => {
       $("progress").hidden = true;
-      error.textContent = `${file.name}: нет связи с сервисом`;
-      error.hidden = false;
-      resolve();
+      fail("нет связи с сервисом");
     };
     xhr.send(form);
   });
 }
 
 async function upload(files) {
-  for (const file of files) await uploadOne(file);
+  // Ошибки копятся по всем файлам: загрузка следующего не прячет сообщение о прошлом
+  const errors = [];
+  showUploadErrors(errors);
+  for (const file of files) await uploadOne(file, errors);
 }
 
 function renderList() {
+  // Перерисовка на каждом опросе теряла щелчки по списку
+  const listed = JSON.stringify([state.current, [...state.jobs].map(([id, job]) => job && [id, job.filename, job.status])]);
+  if (listed === state.listed) return;
+  state.listed = listed;
   const list = $("jobs");
   list.replaceChildren();
   $("empty").hidden = state.jobs.size > 0;
@@ -252,6 +264,7 @@ function openJob(id) {
     $("audio").pause();
     $("player").hidden = true;
     $("downloads").hidden = true;
+    $("downloads").replaceChildren();
     $("segments-wrap").hidden = true;
     $("audio-error").hidden = true;
     if (location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
@@ -504,7 +517,7 @@ async function init() {
     const id = location.hash.slice(1);
     if (id && id !== state.current) {
       if (!state.jobs.has(id)) state.jobs = new Map([[id, null], ...state.jobs]);
-      state.current = id;
+      // state.current меняет openJob: иначе он не сбросит форму волны и запись прошлой задачи
       refresh(id).then(() => (state.jobs.has(id) ? openJob(id) : closeJob()));
     }
   });

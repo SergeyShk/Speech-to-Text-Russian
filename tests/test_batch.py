@@ -1,16 +1,20 @@
+import os
+import struct
+import sys
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from stt_ru import Segment, Transcript
+from stt_ru import Segment, Transcript, batch as module
 from stt_ru.batch import (
     Batch,
     Job,
     Report,
     WatchReport,
     check_options,
+    check_target,
     check_watch,
     find_jobs,
     summary_line,
@@ -51,6 +55,35 @@ def touch(path, data=b"audio"):
 
 def quiet(**kwargs):
     return {"log": lambda m: None, "errors": lambda m: None, **kwargs}
+
+
+def wav_header(data_size):
+    fmt = struct.pack("<HHIIHH", 1, 1, 8000, 16000, 2, 16)
+    header = b"RIFF" + struct.pack("<I", (36 + data_size) & 0xFFFFFFFF) + b"WAVE"
+    return (
+        header
+        + b"fmt "
+        + struct.pack("<I", len(fmt))
+        + fmt
+        + b"data"
+        + struct.pack("<I", data_size)
+    )
+
+
+def settled(action=lambda seconds: None):
+    """Пауза мониторинга: файлы прошлого просмотра успевают распознаться в своих потоках"""
+
+    def sleep(seconds):
+        time.sleep(0.05)
+        action(seconds)
+
+    return sleep
+
+
+posix_permissions = pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="права каталогов POSIX, root их не соблюдает",
+)
 
 
 @pytest.fixture
@@ -126,6 +159,30 @@ class TestFindJobs:
     def test_empty_directory(self, tmp_path):
         assert find_jobs([tmp_path]) == []
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="символические ссылки требуют прав")
+    def test_broken_link_skipped(self, tmp_path):
+        (tmp_path / "gone.wav").symlink_to(tmp_path / "missing.wav")
+        assert find_jobs([tmp_path]) == []
+
+    def test_same_names_allowed_without_saving(self, tmp_path):
+        first, second = touch(tmp_path / "d1" / "a.wav"), touch(tmp_path / "d2" / "a.wav")
+        jobs = find_jobs([first, second], names=False)
+        assert [job.source for job in jobs] == [first, second]
+
+    @posix_permissions
+    def test_unreadable_directory(self, calls):
+        locked = calls / "sub"
+        locked.chmod(0)
+        try:
+            with pytest.raises(PermissionError, match=f"Нет доступа к каталогу: {locked}"):
+                find_jobs([calls], recursive=True)
+            messages = []
+            jobs = find_jobs([calls], recursive=True, strict=False, log=messages.append)
+            assert messages == [f"Нет доступа к каталогу: {locked}"]
+            assert jobs == []
+        finally:
+            locked.chmod(0o755)
+
 
 class TestOptions:
     def test_wrong_format(self):
@@ -144,6 +201,39 @@ class TestOptions:
         with pytest.raises(ParameterError, match="docx"):
             Batch(FakeTranscriber(), tmp_path, ["docx"])
 
+    def test_formats_needed_for_output_dir(self, tmp_path):
+        check_options([], workers=1)
+        with pytest.raises(ParameterError, match="нужен хотя бы один формат"):
+            Batch(FakeTranscriber(), tmp_path, [])
+
+    def test_output_dir_is_file(self, tmp_path):
+        target = touch(tmp_path / "out")
+        with pytest.raises(ParameterError, match="- файл, а нужен каталог"):
+            check_options(["txt"], output_dir=target)
+        with pytest.raises(ParameterError, match="- файл, а нужен каталог"):
+            check_options(["txt"], output_dir=target / "sub")
+
+    def test_summary_is_directory(self, tmp_path):
+        (tmp_path / "all.csv").mkdir()
+        with pytest.raises(ParameterError, match="- каталог, а нужен файл"):
+            check_options(["txt"], tmp_path / "all.csv")
+
+    def test_missing_folders_are_created_later(self, tmp_path):
+        check_options(["txt"], tmp_path / "a" / "all.csv", output_dir=tmp_path / "b" / "c")
+
+    def test_empty_target(self):
+        with pytest.raises(ParameterError, match="Путь результата не задан"):
+            check_target("", directory=True)
+
+    @posix_permissions
+    def test_unwritable_directory(self, tmp_path):
+        tmp_path.chmod(0o500)
+        try:
+            with pytest.raises(ParameterError, match=f"Нет права записи в каталог {tmp_path}"):
+                check_options(["txt"], output_dir=tmp_path / "out")
+        finally:
+            tmp_path.chmod(0o755)
+
     def test_delete_without_results(self):
         with pytest.raises(ParameterError, match="только если результаты сохраняются"):
             Batch(FakeTranscriber(), None, [], delete_source=True)
@@ -152,7 +242,10 @@ class TestOptions:
         ("interval", "min_age", "message"),
         [
             (0, 0, "Интервал просмотра должен быть положительным"),
-            (1, -1, "не может быть отрицательным"),
+            (float("nan"), 0, "Интервал просмотра должен быть положительным"),
+            (float("inf"), 0, "Интервал просмотра должен быть положительным"),
+            (1, -1, "должно быть неотрицательным числом"),
+            (1, float("inf"), "должно быть неотрицательным числом"),
         ],
     )
     def test_watch(self, interval, min_age, message):
@@ -258,6 +351,26 @@ class TestBatch:
         report = batch.run(find_jobs([calls / "a.wav"]))
         assert (report.done, report.failed) == ([calls / "a.wav"], {})
 
+    def test_source_changed_during_work_kept(self, calls, tmp_path):
+        class Growing(FakeTranscriber):
+            def transcribe(self, path):
+                result = super().transcribe(path)
+                with Path(path).open("ab") as file:
+                    file.write(b" more audio")
+                return result
+
+        errors = []
+        batch = Batch(
+            Growing(), tmp_path / "out", ["txt"], delete_source=True, **quiet(errors=errors.append)
+        )
+        report = batch.run(find_jobs([calls / "a.wav"]))
+        assert report.failed == {calls / "a.wav": "файл изменился во время распознавания"}
+        assert (calls / "a.wav").exists()
+        assert not (tmp_path / "out" / "a.txt").exists()
+        assert errors == [
+            f"[1/1] {calls / 'a.wav'}: ошибка - файл изменился во время распознавания"
+        ]
+
     def test_delete_failure(self, calls, tmp_path, monkeypatch):
         errors = []
 
@@ -306,6 +419,7 @@ class TestBatch:
         monkeypatch.setattr(Batch, "_append_summary", fail)
         report = batch.run(find_jobs([calls / "a.wav"]))
         assert report.failed == {calls / "a.wav": "файл открыт в Excel"}
+        assert report.unsaved == [calls / "a.wav"]
         assert not (out / "a.txt").exists()
         assert (calls / "a.wav").exists()
         monkeypatch.undo()
@@ -446,7 +560,12 @@ class TestWatch:
         batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet())
         changes = iter([lambda: None, lambda: broken.write_bytes(b"new audio")])
         report = watch(
-            batch, [folder], min_age=0, rounds=3, sleep=lambda s: next(changes)(), clock=later
+            batch,
+            [folder],
+            min_age=0,
+            rounds=3,
+            sleep=settled(lambda s: next(changes)()),
+            clock=later,
         )
         assert transcriber.calls == [broken, broken]
         assert list(report.failed) == [broken]
@@ -456,7 +575,12 @@ class TestWatch:
         broken = touch(folder / "broken.wav")
         batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], **quiet())
         report = watch(
-            batch, [folder], min_age=0, rounds=2, sleep=lambda s: broken.unlink(), clock=later
+            batch,
+            [folder],
+            min_age=0,
+            rounds=2,
+            sleep=settled(lambda s: broken.unlink()),
+            clock=later,
         )
         assert report.failed == {}
 
@@ -472,7 +596,7 @@ class TestWatch:
             [folder, tmp_path / "gone"],
             min_age=0,
             rounds=3,
-            sleep=lambda s: None,
+            sleep=settled(),
             clock=later,
         )
         assert transcriber.calls == [folder / "call.mp3"]
@@ -495,11 +619,11 @@ class TestWatch:
         )
         moves = iter([(folder, away), (away, folder), (folder, away), (away, folder)])
 
-        def sleep(seconds):
+        def move(seconds):
             source, target = next(moves)
             source.rename(target)
 
-        watch(batch, [folder], min_age=0, rounds=5, sleep=sleep, clock=later)
+        watch(batch, [folder], min_age=0, rounds=5, sleep=settled(move), clock=later)
         assert transcriber.calls == [audio]
         assert errors == [f"Файл или каталог не найден: {folder}"] * 2
         assert not any("пропущен" in message for message in messages)
@@ -534,7 +658,12 @@ class TestWatch:
         batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], delete_source=True, **quiet())
         arrivals = iter([lambda: touch(folder / "a.wav"), lambda: touch(folder / "b.wav")])
         report = watch(
-            batch, [folder], min_age=0, rounds=3, sleep=lambda s: next(arrivals)(), clock=later
+            batch,
+            [folder],
+            min_age=0,
+            rounds=3,
+            sleep=settled(lambda s: next(arrivals)()),
+            clock=later,
         )
         assert report.done == 2
         assert list(folder.iterdir()) == []
@@ -543,6 +672,143 @@ class TestWatch:
         batch = Batch(FakeTranscriber(), tmp_path, ["txt"])
         with pytest.raises(ParameterError):
             watch(batch, [tmp_path], interval=0)
+
+    def test_waits_until_wav_is_complete(self, tmp_path):
+        folder = tmp_path / "in"
+        audio = touch(folder / "a.wav", wav_header(1000) + b"\0" * 400)
+        transcriber = FakeTranscriber()
+        batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet())
+        copies = iter([lambda: None, lambda: audio.write_bytes(wav_header(1000) + b"\0" * 1000)])
+        report = watch(
+            batch,
+            [folder],
+            min_age=0,
+            rounds=3,
+            sleep=settled(lambda s: next(copies)()),
+            clock=later,
+        )
+        assert transcriber.calls == [audio]
+        assert report.done == 1
+
+    def test_changed_file_recognized_again(self, tmp_path):
+        folder = tmp_path / "in"
+        audio = touch(folder / "a.wav")
+        transcriber = FakeTranscriber()
+        batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet())
+        changes = iter([lambda: audio.write_bytes(b"audio, now complete")])
+        report = watch(
+            batch,
+            [folder],
+            min_age=0,
+            rounds=2,
+            sleep=settled(lambda s: next(changes)()),
+            clock=later,
+        )
+        assert transcriber.calls == [audio, audio]
+        assert report == WatchReport(done=2, skipped=0, failed={})
+
+    def test_unsaved_results_retried(self, tmp_path, monkeypatch):
+        folder = tmp_path / "in"
+        audio = touch(folder / "a.wav")
+        attempts = []
+        append = Batch._append_summary
+
+        def flaky(self, transcript):
+            attempts.append(transcript.source)
+            if len(attempts) == 1:
+                raise PermissionError("файл открыт в Excel")
+            append(self, transcript)
+
+        monkeypatch.setattr(Batch, "_append_summary", flaky)
+        summary = tmp_path / "all.csv"
+        batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], summary=summary, **quiet())
+        report = watch(batch, [folder], min_age=0, rounds=2, sleep=settled(), clock=later)
+        assert attempts == ["a.wav", "a.wav"]
+        assert report == WatchReport(done=1, skipped=0, failed={})
+        assert audio.exists() and (tmp_path / "out" / "a.txt").exists()
+
+    def test_new_files_do_not_wait_for_long_ones(self, tmp_path):
+        folder = tmp_path / "in"
+        touch(folder / "long.wav")
+        finished = []
+
+        class Timed(FakeTranscriber):
+            def transcribe(self, path):
+                time.sleep(0.5 if "long" in Path(path).name else 0)
+                finished.append(Path(path).name)
+                return super().transcribe(path)
+
+        batch = Batch(Timed(), tmp_path / "out", ["txt"], workers=2, **quiet())
+        arrivals = iter([lambda: touch(folder / "short.wav"), lambda: time.sleep(0.1)])
+        report = watch(
+            batch,
+            [folder],
+            min_age=0,
+            rounds=3,
+            sleep=settled(lambda s: next(arrivals)()),
+            clock=later,
+        )
+        assert finished == ["short.wav", "long.wav"]
+        assert report.done == 2
+
+    def test_interrupt_waits_for_running(self, tmp_path):
+        folder = tmp_path / "in"
+        touch(folder / "a.wav")
+        messages = []
+        batch = Batch(
+            FakeTranscriber(delay=0.2), tmp_path / "out", ["txt"], **quiet(log=messages.append)
+        )
+
+        def interrupt(seconds):
+            raise KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            watch(batch, [folder], min_age=0, sleep=interrupt, clock=later)
+        assert (tmp_path / "out" / "a.txt").exists()
+        assert (
+            "Прерывание: дожидаюсь файлов в работе (1), Ctrl+C еще раз - выйти сразу" in messages
+        )
+
+    def test_existing_results_skipped(self, tmp_path):
+        folder = tmp_path / "in"
+        touch(folder / "a.wav")
+        touch(tmp_path / "out" / "a.txt")
+        transcriber = FakeTranscriber()
+        batch = Batch(transcriber, tmp_path / "out", ["txt"], **quiet())
+        report = watch(batch, [folder], min_age=0, rounds=2, sleep=settled(), clock=later)
+        assert report == WatchReport(done=0, skipped=1, failed={})
+        assert transcriber.calls == []
+
+    def test_interrupt_with_nothing_running(self, tmp_path):
+        messages = []
+        batch = Batch(FakeTranscriber(), tmp_path / "out", ["txt"], **quiet(log=messages.append))
+
+        def interrupt(seconds):
+            raise KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            watch(batch, [tmp_path], min_age=0, sleep=interrupt, clock=later)
+        assert messages == []
+
+
+class TestComplete:
+    @pytest.mark.parametrize(
+        ("name", "content", "complete"),
+        [
+            ("a.mp3", b"ID3", True),
+            ("a.wav", wav_header(10) + b"\0" * 10, True),
+            ("a.wav", wav_header(10) + b"\0" * 9, False),
+            ("a.wav", wav_header(0xFFFFFFFF), True),
+            ("a.wav", wav_header(0), True),
+            ("a.wav", b"RIFF\0\0\0\0WAVE" + b"LIST" + struct.pack("<I", 1 << 20), True),
+            ("a.wav", b"not a riff file", True),
+        ],
+    )
+    def test_wav(self, tmp_path, name, content, complete):
+        assert module._complete(touch(tmp_path / name, content)) is complete
+
+    def test_unreadable(self, tmp_path):
+        assert module._complete((tmp_path / "folder.wav").resolve()) is True
 
 
 def test_summary_line():

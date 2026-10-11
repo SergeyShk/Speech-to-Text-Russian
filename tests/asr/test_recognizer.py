@@ -42,6 +42,8 @@ def fake(monkeypatch):
 
     monkeypatch.setattr(recognizer.onnx_asr, "load_model", load_model)
     monkeypatch.setattr(recognizer.onnx_asr, "load_vad", load_vad)
+    # Результат не зависит от того, какие модели в кэше Hugging Face на этой машине
+    monkeypatch.setattr(Recognizer, "_cached", lambda self, quantization: False)
     monkeypatch.setattr(
         recognizer.rt,
         "get_available_providers",
@@ -122,6 +124,63 @@ def test_quantization_fallback(fake, monkeypatch):
     assert [kwargs["quantization"] for _, _, kwargs in loads["model"]] == [None]
 
 
+def test_cached_original_weights_load_without_network(fake, monkeypatch):
+    _, loads = fake
+    monkeypatch.setattr(Recognizer, "_cached", lambda self, quantization: quantization is None)
+    with pytest.warns(UserWarning, match="У модели t-tech/t-one нет весов int8"):
+        asr = Recognizer("t-tech/t-one")
+    assert asr.quantization is None
+    assert [kwargs["quantization"] for _, _, kwargs in loads["model"]] == [None]
+
+
+def test_cached_int8_preferred(fake, monkeypatch):
+    _, loads = fake
+    monkeypatch.setattr(Recognizer, "_cached", lambda self, quantization: True)
+    assert Recognizer().quantization == "int8"
+    assert [kwargs["quantization"] for _, _, kwargs in loads["model"]] == ["int8"]
+
+
+def test_explicit_quantization_without_fallback(fake, monkeypatch):
+    def load_model(model, path=None, **kwargs):
+        raise ModelFileNotFoundError("model?fp16.onnx", "/cache")
+
+    monkeypatch.setattr(recognizer.onnx_asr, "load_model", load_model)
+    with pytest.raises(ModelError, match="модель m с квантизацией fp16"):
+        Recognizer("m", quantization="fp16")
+
+
+def test_model_dir_without_fallback(fake, monkeypatch, tmp_path, recwarn):
+    def load_model(model, path=None, **kwargs):
+        raise ModelFileNotFoundError("model?int8.onnx", path)
+
+    monkeypatch.setattr(recognizer.onnx_asr, "load_model", load_model)
+    with pytest.raises(ModelError, match=r"с квантизацией int8: File 'model\?int8.onnx'"):
+        Recognizer("m", model_dir=tmp_path)
+    assert not recwarn.list
+
+
+def test_cached_asks_resolver_offline(monkeypatch, tmp_path):
+    import onnx_asr.loader
+
+    calls = []
+
+    class Resolver:
+        def resolve_model(self, *, quantization):
+            if quantization == "int8":
+                raise FileNotFoundError("model?int8.onnx")
+            return {}
+
+    def create(model, path, *, offline):
+        calls.append((model, path, offline))
+        return Resolver()
+
+    monkeypatch.setattr(onnx_asr.loader, "create_asr_resolver", create)
+    asr = Recognizer.__new__(Recognizer)
+    asr.model, asr._model_dir = "t-tech/t-one", tmp_path
+    assert (asr._cached("int8"), asr._cached(None)) == (False, True)
+    assert calls == [("t-tech/t-one", tmp_path, True)] * 2
+
+
 def test_no_fallback_without_quantization(monkeypatch):
     def load_model(model, path=None, **kwargs):
         raise ModelFileNotFoundError("model.onnx", "/models")
@@ -142,6 +201,15 @@ def test_recognize(fake):
     ((passed, rate),) = adapter.calls
     assert rate == 8000
     assert [w.tolist() for w in passed] == [w.tolist() for w in waveforms]
+
+
+def test_recognize_replaces_non_finite_samples(fake):
+    adapter, _ = fake
+    waveform = np.zeros(8000, dtype=np.float32)
+    waveform[1:4] = [np.nan, np.inf, -np.inf]
+    Recognizer().recognize([waveform], 8000)
+    ((passed, _),) = adapter.calls
+    assert passed[0][:5].tolist() == [0.0, 0.0, 1.0, -1.0, 0.0]
 
 
 def test_recognize_nothing(fake):

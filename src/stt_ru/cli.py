@@ -1,12 +1,16 @@
 import argparse
 import contextlib
+import dataclasses
 import io
 import json
+import math
 import os
 import re
 import socket
 import sys
 import tempfile
+import typing
+import warnings
 from collections.abc import Callable, Iterable, Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -21,6 +25,7 @@ from .batch import (
     Job,
     Log,
     check_options,
+    check_target,
     check_watch,
     find_jobs,
     ignore,
@@ -313,6 +318,8 @@ def _add_model_options(command: ArgumentParser, several: bool) -> None:
         )
     model.add_argument(
         "--quantization",
+        type=str.lower,
+        choices=[DEFAULT_QUANTIZATION, "none"],
         default=DEFAULT_QUANTIZATION,
         metavar="ТИП",
         help=f"квантизация весов: {DEFAULT_QUANTIZATION} (по умолчанию) или none",
@@ -357,8 +364,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="replace")
+    warnings.showwarning = _show_warning
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args, extra = parser.parse_known_args(argv)
+    # Пути после параметров: stt-ru transcribe a.wav -o out b.wav
+    if args.command == "transcribe" and not any(item.startswith("-") for item in extra):
+        args.paths += extra
+    elif extra:
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
     if args.command is None:
         parser.print_help(sys.stderr)
         sys.exit(2)
@@ -369,6 +382,20 @@ def main(argv: Sequence[str] | None = None) -> None:
         _exit(INTERRUPTED)
     except BrokenPipeError:
         _exit(1)
+
+
+def _show_warning(
+    message: Warning | str,
+    category: type[Warning],
+    filename: str,
+    lineno: int,
+    file: typing.TextIO | None = None,
+    line: str | None = None,
+) -> None:
+    # Без пути к исходнику и строки кода, как у остальных сообщений команды
+    if sys.stderr is not None:
+        with contextlib.suppress(OSError, ValueError):
+            print(f"stt-ru: предупреждение: {message}", file=sys.stderr)
 
 
 def _exit(code: int) -> NoReturn:
@@ -387,6 +414,10 @@ def _vad_options(args: argparse.Namespace) -> VadOptions:
         "speech_pad_ms": args.speech_pad_ms,
     }
     return VadOptions(**{name: value for name, value in options.items() if value is not None})
+
+
+def _quantization(args: argparse.Namespace) -> str | None:
+    return None if args.quantization == "none" else args.quantization
 
 
 def _providers(parser: ArgumentParser, device: str) -> list[str] | None:
@@ -411,11 +442,16 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
     formats = [fmt.strip().lower() for fmt in (args.formats or default).split(",") if fmt.strip()]
     log: Log = ignore if args.quiet else log_to_stderr
     try:
-        check_options(formats, args.summary, args.workers)
+        if not formats:
+            parser.error("не задано ни одного формата")
+        check_options(formats, args.summary, args.workers, args.output_dir)
         if args.watch:
             check_watch(args.interval, args.min_age)
         vad = _vad_options(args)
         if args.output_dir is None:
+            if sys.stdout is None:
+                print("stt-ru: ошибка: вывод закрыт", file=sys.stderr)
+                sys.exit(1)
             if len(formats) != 1:
                 parser.error("без --output-dir печатается один формат")
             if args.watch:
@@ -424,14 +460,20 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
                 parser.error("для --delete-source нужен --output-dir или --summary")
         if args.watch and not all(Path(path).is_dir() for path in args.paths):
             parser.error("--watch следит только за каталогами")
-        jobs = find_jobs(args.paths, args.recursive)
+        # О недоступных каталогах и совпадениях имен сообщает мониторинг: перезапуск не падает
+        jobs = find_jobs(
+            args.paths,
+            args.recursive,
+            strict=not args.watch,
+            names=args.output_dir is not None or args.summary is not None,
+        )
         if args.output_dir is None and len(jobs) > 1 and formats[0] not in STREAM_FORMATS:
             parser.error(
                 f"формат {formats[0]} печатается только для одного файла: "
                 "для нескольких укажите --output-dir"
             )
         providers = _providers(parser, args.device)
-    except (FileNotFoundError, ParameterError) as error:
+    except (OSError, ParameterError) as error:
         parser.error(str(error))
     if not jobs and not args.watch:
         log("Файлов для распознавания нет")
@@ -440,7 +482,7 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
     try:
         transcriber = Transcriber(
             args.model,
-            quantization=None if args.quantization.lower() == "none" else args.quantization,
+            quantization=_quantization(args),
             model_dir=args.model_dir,
             providers=providers,
             vad=vad,
@@ -486,6 +528,9 @@ def _printer(fmt: str, several: bool) -> Callable[[Job, Transcript], None]:
 
     def show(job: Job, transcript: Transcript) -> None:
         nonlocal printed
+        if several:
+            # Файлы с одним именем из разных каталогов различаются только путем
+            transcript = dataclasses.replace(transcript, source=str(job.source))
         if fmt == "txt" and several:
             print(f"==> {job.source} <==")
         if fmt == "csv":
@@ -516,8 +561,13 @@ def evaluate(parser: ArgumentParser, args: argparse.Namespace) -> None:
         vad = _vad_options(args)
         if args.model_dir is not None and len(models) > 1:
             parser.error("--model-dir задается только для одной модели")
-        if args.output is not None and Path(args.output).suffix.lower() != ".json":
-            parser.error(f"отчет сохраняется в JSON: {args.output}")
+        if args.output is not None:
+            if Path(args.output).suffix.lower() != ".json":
+                parser.error(f"отчет сохраняется в JSON: {args.output}")
+            check_target(args.output, directory=False)
+        unknown = [model for model in models if not _known_model(model)]
+        if unknown:
+            parser.error(f"неизвестные модели onnx-asr: {', '.join(unknown)}")
         samples = load_manifest(args.manifest)
         providers = _providers(parser, args.device)
     except (FileNotFoundError, ParameterError) as error:
@@ -528,25 +578,36 @@ def evaluate(parser: ArgumentParser, args: argparse.Namespace) -> None:
         print(f"stt-ru: ошибка: {error}", file=sys.stderr)
         sys.exit(1)
     log(f"Записей в разметке: {len(samples)}")
-    reports = []
-    for model in models:
-        log(f"Загрузка модели {model}...")
-        try:
-            transcriber = Transcriber(
-                model,
-                quantization=None if args.quantization.lower() == "none" else args.quantization,
-                model_dir=args.model_dir,
-                providers=providers,
-                vad=vad,
-                split_channels=not args.mono,
-                ffmpeg=args.ffmpeg,
-            )
-        except ModelError as error:
-            print(f"stt-ru: ошибка: {error}", file=sys.stderr)
-            reports.append(ModelReport(model, error=str(error)))
-            continue
-        reports.append(evaluate_model(transcriber, samples, log=log))
-        del transcriber
+    reports: list[ModelReport] = []
+    interrupted = False
+    try:
+        for model in models:
+            log(f"Загрузка модели {model}...")
+            try:
+                transcriber = Transcriber(
+                    model,
+                    quantization=_quantization(args),
+                    model_dir=args.model_dir,
+                    providers=providers,
+                    vad=vad,
+                    split_channels=not args.mono,
+                    ffmpeg=args.ffmpeg,
+                )
+            except ModelError as error:
+                print(f"stt-ru: ошибка: {error}", file=sys.stderr)
+                reports.append(ModelReport(model, error=str(error)))
+                continue
+            reports.append(evaluate_model(transcriber, samples, log=log))
+            del transcriber
+    except KeyboardInterrupt:
+        # Оценка моделей идет часами: уже оцененные не должны пропадать
+        interrupted = True
+        print(
+            f"stt-ru: оценка прервана, в таблице модели, оцененные целиком: {len(reports)}",
+            file=sys.stderr,
+        )
+    if interrupted and not reports:
+        sys.exit(INTERRUPTED)
     failed = any(report.error is not None or report.failed for report in reports)
     if args.output is not None:
         document = {"manifest": str(args.manifest), "models": [r.to_dict() for r in reports]}
@@ -567,8 +628,21 @@ def evaluate(parser: ArgumentParser, args: argparse.Namespace) -> None:
                 "и словами), WER завышен",
                 file=sys.stderr,
             )
+    if interrupted:
+        sys.exit(INTERRUPTED)
     if failed:
         sys.exit(1)
+
+
+def _known_model(model: str) -> bool:
+    # Модель с Hugging Face (имя с «/») проверяется только при загрузке
+    if "/" in model:
+        return True
+    try:
+        from onnx_asr.loader import AsrNames, AsrTypeNames
+    except ImportError:
+        return True
+    return model in typing.get_args(AsrNames) + typing.get_args(AsrTypeNames)
 
 
 def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
@@ -596,10 +670,13 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             ("--max-queue", args.max_queue),
             ("--keep", args.keep),
         ):
-            if value <= 0:
-                parser.error(f"{option} должен быть положительным: {value:g}")
-        if args.data_dir is not None and not Path(args.data_dir).is_dir():
-            parser.error(f"каталога нет: {args.data_dir}")
+            if not (math.isfinite(value) and value > 0):
+                parser.error(f"{option} должен быть положительным числом: {value:g}")
+        if args.data_dir is not None:
+            if not args.data_dir or not Path(args.data_dir).is_dir():
+                parser.error(f"каталога нет: {args.data_dir}")
+            if not os.access(args.data_dir, os.W_OK | os.X_OK):
+                parser.error(f"нет права записи в каталог {args.data_dir}")
         providers = _providers(parser, args.device)
     except ParameterError as error:
         parser.error(str(error))
@@ -607,9 +684,11 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
         import uvicorn
 
         from .service import JobQueue, create_app
-    except ImportError as error:
+    except (ImportError, RuntimeError) as error:
+        # Без python-multipart FastAPI бросает RuntimeError при объявлении загрузки файла
+        package = getattr(error, "name", None) or "python-multipart"
         print(
-            f"stt-ru: ошибка: Для сервиса нужен пакет {error.name}: pip install 'stt-ru[service]'",
+            f"stt-ru: ошибка: Для сервиса нужен пакет {package}: pip install 'stt-ru[service]'",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -620,7 +699,8 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-    token = os.environ.get(TOKEN_VARIABLE) or None
+    # Перевод строки в конце остается от секрета из файла или .env с CRLF
+    token = os.environ.get(TOKEN_VARIABLE, "").strip() or None
     if token is None and args.host not in LOCAL_HOSTS:
         warn(
             f"stt-ru: предупреждение: сервис доступен по сети без токена; задайте токен "
@@ -630,7 +710,7 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
     try:
         transcriber = Transcriber(
             args.model,
-            quantization=None if args.quantization.lower() == "none" else args.quantization,
+            quantization=_quantization(args),
             model_dir=args.model_dir,
             providers=providers,
             vad=vad,
@@ -648,6 +728,7 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
         max_duration=args.max_duration * 60,
         keep=args.keep * 3600,
         log=log,
+        errors=warn,
     )
     app = create_app(jobs, token=token, max_size=int(args.max_size * (1 << 20)))
     previous = tempfile.tempdir
@@ -663,7 +744,8 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             port=args.port,
             log_level="warning" if args.quiet else "info",
             access_log=False,
-            timeout_graceful_shutdown=10,
+            # Короче 10 с, после которых docker stop завершает процесс принудительно
+            timeout_graceful_shutdown=3,
         )
     finally:
         tempfile.tempdir = previous

@@ -1,9 +1,11 @@
 import dataclasses
+import math
 import os
+import struct
 import sys
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +25,8 @@ AUDIO_SUFFIXES = frozenset(
 SUMMARY_FORMATS = ("csv", "jsonl")
 
 Log = Callable[[str], None]
+Signature = tuple[float, int]
+Result = tuple[Transcript, float, Signature | None]
 
 
 def log_to_stderr(message: str) -> None:
@@ -59,11 +63,14 @@ class Report:
         done (list[Path]): Распознанные файлы
         skipped (list[Path]): Файлы, у которых результаты уже есть
         failed (dict[Path, str]): Файлы с ошибкой и ее текст
+        unsaved (list[Path]): Файлы из failed, которые распознаны, но результаты
+            не записались: причина может быть временной
     """
 
     done: list[Path] = field(default_factory=list)
     skipped: list[Path] = field(default_factory=list)
     failed: dict[Path, str] = field(default_factory=dict)
+    unsaved: list[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -88,6 +95,7 @@ def find_jobs(
     recursive: bool = False,
     *,
     strict: bool = True,
+    names: bool = True,
     log: Log = ignore,
 ) -> list[Job]:
     """
@@ -102,35 +110,38 @@ def find_jobs(
     Аргументы:
         paths (list[str]): Файлы и каталоги
         recursive (bool): Искать файлы и во вложенных каталогах
-        strict (bool): Отсутствующий путь и совпадение имен результатов - ошибка;
-            False - путь и файл с совпадающим именем пропускаются с сообщением в log
+        strict (bool): Отсутствующий или недоступный путь и совпадение имен результатов -
+            ошибка; False - они пропускаются с сообщением в log
+        names (bool): Проверять совпадение имен результатов; False - когда результаты
+            не сохраняются в каталог
         log (Callable[[str], None]): Сообщения о пропущенных путях и файлах при strict=False
 
     Вывод:
-        list[Job]: Файлы в порядке аргументов, внутри каталога - по имени
+        list[Job]: Файлы в порядке аргументов, внутри каталога - по пути
 
     Исключения:
         FileNotFoundError: Если пути нет и strict=True
+        PermissionError: Если путь или вложенный каталог недоступен и strict=True
         ParameterError: Если у двух файлов совпадают имена результатов и strict=True
     """
     jobs: list[Job] = []
     for item in map(Path, paths):
-        if item.is_dir():
-            for file in sorted(item.rglob("*") if recursive else item.glob("*")):
-                relative = file.relative_to(item)
-                if any(part.startswith(".") for part in relative.parts):
-                    continue
-                if file.suffix.lower() in AUDIO_SUFFIXES and file.is_file():
-                    jobs.append(Job(file, relative.with_suffix(""), relative.as_posix()))
-        elif item.is_file():
-            jobs.append(Job(item, Path(item.stem), item.name))
-        elif strict:
-            raise FileNotFoundError(f"Файл или каталог не найден: {item}")
-        else:
-            log(f"Файл или каталог не найден: {item}")
+        try:
+            if item.is_dir():
+                jobs += _directory_jobs(item, recursive)
+            elif item.is_file():
+                jobs.append(Job(item, Path(item.stem), item.name))
+            else:
+                raise FileNotFoundError(f"Файл или каталог не найден: {item}")
+        except OSError as error:
+            if strict:
+                raise
+            log(str(error))
     unique: dict[Path, Job] = {}
     for job in jobs:
         unique.setdefault(job.source.resolve(), job)
+    if not names:
+        return list(unique.values())
     taken: dict[str, Path] = {}
     result = []
     for job in unique.values():
@@ -146,10 +157,29 @@ def find_jobs(
     return result
 
 
+def _directory_jobs(directory: Path, recursive: bool) -> list[Job]:
+    jobs = []
+    denied: list[OSError] = []
+    # os.walk, в отличие от glob, сообщает о каталогах, которые не удалось прочитать
+    for root, folders, files in os.walk(directory, onerror=denied.append):
+        folders[:] = [name for name in folders if not name.startswith(".")] if recursive else []
+        for name in files:
+            file = Path(root, name)
+            if name.startswith(".") or file.suffix.lower() not in AUDIO_SUFFIXES:
+                continue
+            if file.is_file():
+                relative = file.relative_to(directory)
+                jobs.append(Job(file, relative.with_suffix(""), relative.as_posix()))
+    if denied:
+        raise PermissionError(f"Нет доступа к каталогу: {denied[0].filename}")
+    return sorted(jobs, key=lambda job: job.name.parts)
+
+
 def check_options(
     formats: Sequence[str],
     summary: str | os.PathLike[str] | None = None,
     workers: int = 1,
+    output_dir: str | os.PathLike[str] | None = None,
 ) -> None:
     """
     Проверка параметров пакетной обработки
@@ -158,10 +188,12 @@ def check_options(
         formats (list[str]): Форматы результатов
         summary (str): Общий файл
         workers (int): Число потоков
+        output_dir (str): Каталог результатов
 
     Исключения:
-        ParameterError: Если формат не поддерживается, у общего файла не то расширение
-            или число потоков не положительно
+        ParameterError: Если формат не поддерживается, для каталога результатов нет
+            форматов, у общего файла не то расширение, каталог результатов или общий
+            файл нельзя записать или число потоков не положительно
     """
     unknown = [fmt for fmt in formats if fmt not in FORMATS]
     if unknown:
@@ -172,6 +204,45 @@ def check_options(
         raise ParameterError(f"Общий файл должен быть CSV или JSONL: {summary}")
     if workers < 1:
         raise ParameterError(f"Число потоков должно быть положительным: {workers}")
+    if output_dir is not None:
+        if not formats:
+            raise ParameterError("Для каталога результатов нужен хотя бы один формат")
+        check_target(output_dir, directory=True)
+    if summary is not None:
+        check_target(summary, directory=False)
+
+
+def check_target(path: str | os.PathLike[str], *, directory: bool) -> None:
+    """
+    Проверка, что файл или каталог результата можно записать
+
+    Описание:
+        Путь должен быть каталогом (directory=True) или не быть каталогом, а ближайший
+        существующий каталог на пути - доступен на запись: недостающие каталоги
+        создаются при записи
+
+    Аргументы:
+        path (str): Путь к файлу или каталогу
+        directory (bool): Путь - каталог
+
+    Исключения:
+        ParameterError: Если путь пуст, не того вида или каталог недоступен на запись
+    """
+    if not os.fspath(path):
+        raise ParameterError("Путь результата не задан")
+    target = Path(path)
+    if target.exists() and target.is_dir() != directory:
+        raise ParameterError(
+            f"{target} - {'файл' if directory else 'каталог'}, а нужен "
+            f"{'каталог' if directory else 'файл'}"
+        )
+    folder = target if directory else target.parent
+    while not folder.exists() and folder != folder.parent:
+        folder = folder.parent
+    if not folder.is_dir():
+        raise ParameterError(f"{folder} - файл, а нужен каталог")
+    if not os.access(folder, os.W_OK | os.X_OK):
+        raise ParameterError(f"Нет права записи в каталог {folder}")
 
 
 def write_atomic(path: Path, content: bytes) -> None:
@@ -239,7 +310,7 @@ class Batch:
         errors: Log = log_to_stderr,
         on_done: Callable[[Job, Transcript], None] | None = None,
     ) -> None:
-        check_options(formats, summary, workers)
+        check_options(formats, summary, workers, output_dir)
         if delete_source and output_dir is None and summary is None:
             raise ParameterError("Удалять исходники можно, только если результаты сохраняются")
         self.transcriber = transcriber
@@ -286,15 +357,7 @@ class Batch:
             Report: Распознанные, пропущенные и упавшие файлы
         """
         report = Report()
-        pending = []
-        for job in jobs:
-            outputs = self.outputs(job)
-            if outputs and not self.overwrite and all(path.exists() for path in outputs):
-                report.skipped.append(job.source)
-                kept = ", исходник оставлен" if self.delete_source else ""
-                self.log(f"{job.source}: пропущен, результаты уже есть{kept}")
-            else:
-                pending.append(job)
+        pending = [job for job in jobs if not self._skip(job, report)]
         executor = ThreadPoolExecutor(max_workers=self.workers)
         futures = {executor.submit(self._transcribe, job): job for job in pending}
         counter = iter(range(1, len(pending) + 1))
@@ -318,20 +381,39 @@ class Batch:
             executor.shutdown(wait=False, cancel_futures=True)
         return report
 
-    def _transcribe(self, job: Job) -> tuple[Transcript, float]:
-        started = time.perf_counter()
-        transcript = self.transcriber.transcribe(job.source)
-        return transcript, time.perf_counter() - started
+    def _skip(self, job: Job, report: Report, force: Collection[Path] = ()) -> bool:
+        outputs = self.outputs(job)
+        if self.overwrite or job.source in force or not outputs:
+            return False
+        if not all(path.exists() for path in outputs):
+            return False
+        report.skipped.append(job.source)
+        kept = ", исходник оставлен" if self.delete_source else ""
+        self.log(f"{job.source}: пропущен, результаты уже есть{kept}")
+        return True
 
-    def _finish(
-        self, job: Job, future: "Future[tuple[Transcript, float]]", report: Report, prefix: str
-    ) -> None:
+    def _transcribe(self, job: Job) -> Result:
+        started = time.perf_counter()
+        before = _signature(job.source)
+        transcript = self.transcriber.transcribe(job.source)
+        return transcript, time.perf_counter() - started, before
+
+    def _finish(self, job: Job, future: "Future[Result]", report: Report, prefix: str) -> None:
         try:
-            transcript, seconds = future.result()
+            transcript, seconds, before = future.result()
+        except Exception as error:
+            self._fail(job, report, prefix, error)
+            return
+        # Файл дописали, пока он распознавался: результат неполный, исходник нужен целиком
+        after = _signature(job.source)
+        if self.delete_source and after is not None and after != before:
+            self._fail(job, report, prefix, "файл изменился во время распознавания")
+            return
+        try:
             self._save(job, transcript)
         except Exception as error:
-            report.failed[job.source] = str(error)
-            self.errors(f"{prefix} {job.source}: ошибка - {error}")
+            report.unsaved.append(job.source)
+            self._fail(job, report, prefix, error)
             return
         if self.on_done is not None:
             self.on_done(job, transcript)
@@ -342,6 +424,10 @@ class Batch:
             f"{prefix} {job.source}: фрагментов {len(transcript.segments)}, "
             f"{transcript.duration:.1f} с записи за {seconds:.1f} с"
         )
+
+    def _fail(self, job: Job, report: Report, prefix: str, error: object) -> None:
+        report.failed[job.source] = str(error)
+        self.errors(f"{prefix} {job.source}: ошибка - {error}")
 
     def _save(self, job: Job, transcript: Transcript) -> None:
         if self.summary is not None:
@@ -388,10 +474,18 @@ def watch(
 
     Описание:
         Каталоги просматриваются каждые interval секунд; файл берется в работу, когда
-        не менялся min_age секунд. Файл с ошибкой не повторяется, пока не изменится.
-        Пропавший каталог и файлы с совпадающими именами результатов не останавливают
-        мониторинг: сообщение о них пишется в batch.errors, когда случай появляется.
-        Попытки файлов из недоступного каталога помнятся до его возвращения
+        не менялся min_age секунд, а в WAV - когда данных столько, сколько указано
+        в заголовке. Новые файлы ставятся в очередь, не дожидаясь файлов прошлых
+        просмотров; одновременно распознается batch.workers файлов, результаты
+        сохраняются в начале следующего просмотра. Файл, который изменился после
+        распознавания, распознается заново с перезаписью результатов (строки общего
+        файла дописываются еще раз). Файл с ошибкой распознавания не повторяется, пока
+        не изменится; файл, результаты которого не записались, повторяется в следующем
+        просмотре. Пропавший или недоступный каталог и файлы с совпадающими именами
+        результатов не останавливают мониторинг: сообщение о них пишется в batch.errors,
+        когда случай появляется. Попытки файлов из недоступного каталога помнятся
+        до его возвращения. При прерывании (Ctrl+C) очередь отменяется, а файлы в работе
+        дораспознаются и сохраняются
 
     Аргументы:
         batch (Batch): Распознавание с записью результатов
@@ -399,7 +493,8 @@ def watch(
         recursive (bool): Просматривать и вложенные каталоги
         interval (float): Пауза между просмотрами, с, больше 0
         min_age (float): Сколько секунд файл не должен меняться, не меньше 0
-        rounds (int): Число просмотров; None - до прерывания
+        rounds (int): Число просмотров; None - до прерывания. После последнего
+            просмотра файлы в работе дораспознаются
         sleep (Callable[[float], None]): Функция паузы
         clock (Callable[[], float]): Текущее время, с
 
@@ -407,16 +502,68 @@ def watch(
         WatchReport: Итог всех просмотров
 
     Исключения:
-        ParameterError: Если interval не положителен или min_age отрицателен
+        ParameterError: Если interval или min_age не проходят check_watch
     """
     check_watch(interval, min_age)
-    total = WatchReport()
-    attempts: dict[Path, tuple[float, int]] = {}
-    active: set[str] = set()
+    state = _Watch(batch)
+    executor = ThreadPoolExecutor(max_workers=batch.workers)
     count = 0
-    while rounds is None or count < rounds:
-        count += 1
-        now = clock()
+    try:
+        while rounds is None or count < rounds:
+            count += 1
+            state.collect()
+            for job in state.scan(directories, recursive, min_age, clock()):
+                state.running[executor.submit(batch._transcribe, job)] = job
+            if rounds is None or count < rounds:
+                sleep(interval)
+        wait(state.running)
+        state.collect()
+    except KeyboardInterrupt:
+        busy = [future for future in state.running if not future.cancel()]
+        state.running = {future: state.running[future] for future in busy}
+        if busy:
+            batch.log(
+                f"Прерывание: дожидаюсь файлов в работе ({len(busy)}), "
+                "Ctrl+C еще раз - выйти сразу"
+            )
+            wait(busy)
+            state.collect()
+        raise
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return state.total
+
+
+class _Watch:
+    def __init__(self, batch: Batch) -> None:
+        self.batch = batch
+        self.total = WatchReport()
+        # Сигнатура файла при последней попытке: изменившийся файл берется снова
+        self.attempts: dict[Path, Signature] = {}
+        self.running: dict[Future[Result], Job] = {}
+        self.active: set[str] = set()
+        self.finished = 0
+
+    def collect(self) -> None:
+        for future in [future for future in self.running if future.done()]:
+            job = self.running.pop(future)
+            self.finished += 1
+            report = Report()
+            self.batch._finish(job, future, report, f"[{self.finished}]")
+            self.total.done += len(report.done)
+            for path in report.done:
+                self.total.failed.pop(path, None)
+            self.total.failed.update(report.failed)
+            for path in report.unsaved:
+                self.attempts.pop(path, None)
+
+    def scan(
+        self,
+        directories: Sequence[str | os.PathLike[str]],
+        recursive: bool,
+        min_age: float,
+        now: float,
+    ) -> list[Job]:
         messages: list[str] = []
         try:
             jobs = find_jobs(directories, recursive, strict=False, log=messages.append)
@@ -424,37 +571,67 @@ def watch(
             messages.append(f"Не удалось просмотреть каталоги: {error}")
             jobs = []
         for message in messages:
-            if message not in active:
-                batch.errors(message)
-        active = set(messages)
+            if message not in self.active:
+                self.batch.errors(message)
+        self.active = set(messages)
         roots = [Path(directory) for directory in directories if Path(directory).is_dir()]
         present = {job.source for job in jobs}
-        attempts = {
-            path: value for path, value in attempts.items() if not _gone(path, present, roots)
+        self.attempts = {
+            path: value for path, value in self.attempts.items() if not _gone(path, present, roots)
         }
-        total.failed = {
-            path: text for path, text in total.failed.items() if not _gone(path, present, roots)
+        self.total.failed = {
+            path: text
+            for path, text in self.total.failed.items()
+            if not _gone(path, present, roots)
         }
+        busy = set(self.running.values())
         ready = []
         for job in jobs:
-            try:
-                stat = job.source.stat()
-            except FileNotFoundError:
+            signature = _signature(job.source)
+            if job in busy or signature is None or now - signature[0] < min_age:
                 continue
-            signature = (stat.st_mtime, stat.st_size)
-            if now - stat.st_mtime >= min_age and attempts.get(job.source) != signature:
-                ready.append((job, signature))
-        report = batch.run([job for job, _ in ready])
-        for job, signature in ready:
-            attempts[job.source] = signature
-        total.done += len(report.done)
-        total.skipped += len(report.skipped)
-        for path in report.done:
-            total.failed.pop(path, None)
-        total.failed.update(report.failed)
-        if rounds is None or count < rounds:
-            sleep(interval)
-    return total
+            previous = self.attempts.get(job.source)
+            if previous == signature or not _complete(job.source):
+                continue
+            self.attempts[job.source] = signature
+            # Файл изменился после попытки: прежние результаты могли быть по его части
+            force = {job.source} if previous is not None else set()
+            if self.batch._skip(job, Report(), force):
+                self.total.skipped += 1
+            else:
+                ready.append(job)
+        return ready
+
+
+def _signature(path: Path) -> Signature | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime, stat.st_size
+
+
+def _complete(path: Path) -> bool:
+    # WAV копируют от начала: в заголовке уже полный размер данных, а самих данных меньше
+    if path.suffix.lower() != ".wav":
+        return True
+    try:
+        with path.open("rb") as file:
+            head = file.read(1 << 16)
+            size = os.fstat(file.fileno()).st_size
+    except OSError:
+        return True
+    if head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+        return True
+    offset = 12
+    while offset + 8 <= len(head):
+        chunk = head[offset : offset + 4]
+        (length,) = struct.unpack("<I", head[offset + 4 : offset + 8])
+        if chunk == b"data":
+            # 0 и 0xFFFFFFFF пишут программы, которые не знают длину записи заранее
+            return length in (0, 0xFFFFFFFF) or offset + 8 + length <= size
+        offset += 8 + length + (length & 1)
+    return True
 
 
 def _gone(path: Path, present: set[Path], roots: Sequence[Path]) -> bool:
@@ -470,12 +647,13 @@ def check_watch(interval: float, min_age: float) -> None:
         min_age (float): Сколько секунд файл не должен меняться
 
     Исключения:
-        ParameterError: Если interval не положителен или min_age отрицателен
+        ParameterError: Если interval не конечное положительное число или min_age
+            не конечное неотрицательное
     """
-    if interval <= 0:
-        raise ParameterError(f"Интервал просмотра должен быть положительным: {interval}")
-    if min_age < 0:
-        raise ParameterError(f"Время без изменений не может быть отрицательным: {min_age}")
+    if not (math.isfinite(interval) and interval > 0):
+        raise ParameterError(f"Интервал просмотра должен быть положительным числом: {interval}")
+    if not (math.isfinite(min_age) and min_age >= 0):
+        raise ParameterError(f"Время без изменений должно быть неотрицательным числом: {min_age}")
 
 
 def summary_line(report: Report | WatchReport) -> str:

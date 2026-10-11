@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, fields
 
 from onnx_asr.adapters import VadOptions as OnnxVadOptions
 
@@ -24,8 +25,9 @@ class VadOptions:
         speech_pad_ms (float): Запас по краям фрагмента, мс
 
     Исключения:
-        ParameterError: Если вероятность вне интервала от 0 до 1, neg_threshold больше threshold,
-            длительность отрицательна или max_speech_duration_s меньше двух speech_pad_ms плюс 1 с
+        ParameterError: Если значение не конечное число, вероятность вне интервала от 0 до 1,
+            neg_threshold больше threshold, длительность отрицательна или max_speech_duration_s
+            меньше двух speech_pad_ms плюс 1 с
 
     Пример использования:
         >>> from stt_ru.vad import VadOptions
@@ -42,6 +44,10 @@ class VadOptions:
     speech_pad_ms: float = 30
 
     def __post_init__(self) -> None:
+        for option in fields(self):
+            value = getattr(self, option.name)
+            if value is not None and not math.isfinite(value):
+                raise ParameterError(f"{option.name} должен быть конечным числом: {value}")
         if not 0 < self.threshold < 1:
             raise ParameterError(f"threshold должен быть от 0 до 1: {self.threshold}")
         if self.neg_threshold is not None and not 0 < self.neg_threshold <= self.threshold:

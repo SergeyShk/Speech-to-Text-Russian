@@ -48,6 +48,9 @@ class Transcript:
         channels (int): Число распознанных каналов: 1, если каналы сведены в один
         model (str): Модель распознавания
         source (str): Имя файла записи; None - запись не из файла
+        channel_map (tuple[int | None, ...]): Для каждого канала записи - номер канала,
+            под которым распознана его речь: свой номер, номер совпавшего с ним канала
+            или None, если дорожка одна; пусто - неизвестно
 
     Пример использования:
         >>> from stt_ru import Segment, Transcript
@@ -61,6 +64,7 @@ class Transcript:
     channels: int
     model: str
     source: str | None = None
+    channel_map: tuple[int | None, ...] = ()
 
     @property
     def text(self) -> str:

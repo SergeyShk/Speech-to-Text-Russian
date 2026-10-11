@@ -1,10 +1,12 @@
 import importlib
 import io
 import json
+import os
 import runpy
 import socket
 import sys
 import tempfile
+import warnings
 from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
@@ -155,7 +157,10 @@ class TestPrint:
     def test_several_jsonl(self, fake, files, capsys):
         main(["transcribe", str(files), "-f", "JSONL"])
         rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-        assert sorted({row["source"] for row in rows}) == ["a.wav", "b.wav"]
+        assert sorted({row["source"] for row in rows}) == [
+            str(files / "a.wav"),
+            str(files / "b.wav"),
+        ]
 
     def test_json_needs_output_dir_for_several(self, fake, files, capsys):
         assert run(["transcribe", str(files), "-f", "json"]) == 2
@@ -326,7 +331,7 @@ class TestWatch:
     @pytest.mark.parametrize(
         ("option", "message"),
         [("--interval=-1", "Интервал просмотра должен быть положительным"),
-         ("--min-age=-5", "Время без изменений не может быть отрицательным")],
+         ("--min-age=-5", "Время без изменений должно быть неотрицательным числом")],
     )  # fmt: skip
     def test_wrong_timing(self, fake, files, tmp_path, capsys, option, message):
         assert run(["transcribe", str(files), "-o", str(tmp_path), "--watch", option]) == 2
@@ -490,10 +495,10 @@ class TestEvaluate:
         assert f"[gigaam-v3-e2e-rnnt 2/2] {manifest.parent / 'b.wav'}: WER 33.3 %" in captured.err
 
     def test_several_models(self, fake, manifest, capsys):
-        main(["evaluate", str(manifest), "-q", "-m", "a", "--model", "b", "-m", "a"])
-        assert [transcriber.model for transcriber in fake] == ["a", "b"]
+        main(["evaluate", str(manifest), "-q", "-m", "org/a", "--model", "org/b", "-m", "org/a"])
+        assert [transcriber.model for transcriber in fake] == ["org/a", "org/b"]
         lines = capsys.readouterr().out.splitlines()
-        assert [line.split()[0] for line in lines] == ["Модель", "a", "b"]
+        assert [line.split()[0] for line in lines] == ["Модель", "org/a", "org/b"]
 
     def test_model_options(self, fake, manifest, tmp_path):
         main(
@@ -525,13 +530,79 @@ class TestEvaluate:
         ]
         assert f"Отчет: {output}" in capsys.readouterr().err
 
-    def test_report_not_saved(self, fake, manifest, tmp_path, capsys):
+    def test_report_not_saved(self, fake, manifest, tmp_path, monkeypatch, capsys):
+        def fail(path, content):
+            raise OSError("диск заполнен")
+
+        monkeypatch.setattr(cli, "write_atomic", fail)
         output = tmp_path / "eval.json"
-        output.mkdir()
         assert run(["evaluate", str(manifest), "-o", str(output), "-q"]) == 1
         captured = capsys.readouterr()
-        assert f"stt-ru: ошибка: отчет не сохранен в {output}" in captured.err
+        assert f"stt-ru: ошибка: отчет не сохранен в {output}: диск заполнен" in captured.err
         assert "gigaam-v3-e2e-rnnt" in captured.out
+
+    def test_report_path_checked_first(self, fake, manifest, tmp_path, capsys):
+        output = tmp_path / "eval.json"
+        output.mkdir()
+        assert run(["evaluate", str(manifest), "-o", str(output), "-q"]) == 2
+        assert f"{output} - каталог, а нужен файл" in capsys.readouterr().err
+        assert fake == []
+
+    def test_interrupt_keeps_finished_models(self, monkeypatch, manifest, tmp_path, capsys):
+        def transcriber(model, **kwargs):
+            if model == "org/slow":
+                raise KeyboardInterrupt
+            return FakeTranscriber(model, **kwargs)
+
+        monkeypatch.setattr(cli, "Transcriber", transcriber)
+        output = tmp_path / "eval.json"
+        args = [
+            "evaluate",
+            str(manifest),
+            "-q",
+            "-m",
+            "org/a",
+            "-m",
+            "org/slow",
+            "-o",
+            str(output),
+        ]
+        assert run(args) == 130
+        captured = capsys.readouterr()
+        assert [line.split()[0] for line in captured.out.splitlines()] == ["Модель", "org/a"]
+        assert "оценка прервана, в таблице модели, оцененные целиком: 1" in captured.err
+        document = json.loads(output.read_text(encoding="utf-8"))
+        assert [model["model"] for model in document["models"]] == ["org/a"]
+
+    def test_interrupt_before_any_model(self, monkeypatch, manifest, capsys):
+        def transcriber(model, **kwargs):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(cli, "Transcriber", transcriber)
+        assert run(["evaluate", str(manifest), "-q"]) == 130
+        assert capsys.readouterr().out == ""
+
+    def test_known_models(self, monkeypatch):
+        assert cli._known_model("gigaam-v3-e2e-rnnt")
+        assert cli._known_model("nemo-conformer-ctc")
+        assert cli._known_model("org/any")
+        assert not cli._known_model("gigaam-v3-e2e-rnn")
+        monkeypatch.setitem(sys.modules, "onnx_asr.loader", None)
+        assert cli._known_model("gigaam-v3-e2e-rnn")
+
+    def test_unknown_model_checked_first(self, fake, manifest, capsys):
+        args = [
+            "evaluate",
+            str(manifest),
+            "-q",
+            "-m",
+            "gigaam-v3-e2e-rnnt",
+            "-m",
+            "gigaam-v3-e2e-rnn",
+        ]
+        assert run(args) == 2
+        assert "неизвестные модели onnx-asr: gigaam-v3-e2e-rnn" in capsys.readouterr().err
+        assert fake == []
 
     def test_directory(self, fake, files, capsys):
         (files / "a.txt").write_text("текст a ответ", encoding="utf-8")
@@ -550,17 +621,17 @@ class TestEvaluate:
 
     def test_model_error(self, monkeypatch, manifest, capsys):
         def transcriber(model, **kwargs):
-            if model == "x":
-                raise ModelError("Не удалось загрузить модель x: нет сети")
+            if model == "org/x":
+                raise ModelError("Не удалось загрузить модель org/x: нет сети")
             return FakeTranscriber(model, **kwargs)
 
         monkeypatch.setattr(cli, "Transcriber", transcriber)
-        assert run(["evaluate", str(manifest), "-q", "-m", "x", "-m", "y"]) == 1
+        assert run(["evaluate", str(manifest), "-q", "-m", "org/x", "-m", "org/y"]) == 1
         captured = capsys.readouterr()
-        assert "stt-ru: ошибка: Не удалось загрузить модель x: нет сети" in captured.err
+        assert "stt-ru: ошибка: Не удалось загрузить модель org/x: нет сети" in captured.err
         lines = captured.out.splitlines()
-        assert lines[1].startswith("x (не загружена)")
-        assert lines[2].startswith("y ")
+        assert lines[1].startswith("org/x (не загружена)")
+        assert lines[2].startswith("org/y ")
 
     def test_digits(self, fake, files, capsys):
         (files / "eval.jsonl").write_text(
@@ -640,7 +711,7 @@ class TestServe:
             "port": 8000,
             "log_level": "info",
             "access_log": False,
-            "timeout_graceful_shutdown": 10,
+            "timeout_graceful_shutdown": 3,
         }
         assert (settings.token, settings.max_size) == (None, 500 << 20)
         jobs = settings.jobs
@@ -698,6 +769,55 @@ class TestServe:
         assert server[0][0].token == "секрет"
         assert capsys.readouterr().err == ""
 
+    def test_token_without_line_break(self, fake, server, monkeypatch):
+        monkeypatch.setenv("STT_RU_TOKEN", "секрет\r\n")
+        main(["serve", "-q"])
+        assert server[0][0].token == "секрет"
+
+    def test_job_errors_logged_when_quiet(self, fake, server, capsys):
+        main(["serve", "-q"])
+        jobs = server[0][0].jobs
+        jobs.errors("[1] a.wav: ошибка - файл не читается")
+        assert capsys.readouterr().err == "[1] a.wav: ошибка - файл не читается\n"
+
+    @pytest.mark.parametrize("value", ["nan", "inf"])
+    @pytest.mark.parametrize("option", ["--max-size", "--max-duration", "--keep"])
+    def test_not_finite(self, fake, server, capsys, option, value):
+        assert run(["serve", option, value]) == 2
+        assert f"{option} должен быть положительным числом: {value}" in capsys.readouterr().err
+        assert fake == []
+
+    def test_empty_data_dir(self, fake, server, capsys):
+        assert run(["serve", "--data-dir", ""]) == 2
+        assert "каталога нет" in capsys.readouterr().err
+
+    @pytest.mark.skipif(
+        sys.platform == "win32" or os.geteuid() == 0, reason="права каталогов POSIX"
+    )
+    def test_unwritable_data_dir(self, fake, server, tmp_path, capsys):
+        tmp_path.chmod(0o500)
+        try:
+            assert run(["serve", "--data-dir", str(tmp_path)]) == 2
+        finally:
+            tmp_path.chmod(0o755)
+        assert f"нет права записи в каталог {tmp_path}" in capsys.readouterr().err
+        assert fake == []
+
+    def test_missing_multipart(self, fake, server, monkeypatch, capsys):
+        def broken(name, *args, **kwargs):
+            if name == "service" or name.endswith("stt_ru.service"):
+                raise RuntimeError('Form data requires "python-multipart" to be installed.')
+            return importlib.__import__(name, *args, **kwargs)
+
+        monkeypatch.delitem(sys.modules, "stt_ru.service", raising=False)
+        monkeypatch.setattr("builtins.__import__", broken)
+        assert run(["serve"]) == 1
+        assert (
+            "stt-ru: ошибка: Для сервиса нужен пакет python-multipart: pip install 'stt-ru[service]'"
+            in capsys.readouterr().err
+        )
+        assert fake == []
+
     def test_closed_stderr(self, fake, server, monkeypatch):
         class Closed(io.StringIO):
             def write(self, text):
@@ -716,11 +836,11 @@ class TestServe:
         [
             (["--port", "0"], "порт должен быть от 1 до 65535: 0"),
             (["--port", "65536"], "порт должен быть от 1 до 65535: 65536"),
-            (["-j", "0"], "--workers должен быть положительным: 0"),
-            (["--max-size", "0"], "--max-size должен быть положительным: 0"),
-            (["--max-duration", "-1"], "--max-duration должен быть положительным: -1"),
-            (["--max-queue", "0"], "--max-queue должен быть положительным: 0"),
-            (["--keep", "0"], "--keep должен быть положительным: 0"),
+            (["-j", "0"], "--workers должен быть положительным числом: 0"),
+            (["--max-size", "0"], "--max-size должен быть положительным числом: 0"),
+            (["--max-duration", "-1"], "--max-duration должен быть положительным числом: -1"),
+            (["--max-queue", "0"], "--max-queue должен быть положительным числом: 0"),
+            (["--keep", "0"], "--keep должен быть положительным числом: 0"),
             (["--data-dir", "missing-dir"], "каталога нет: missing-dir"),
             (["--vad-threshold", "2"], "threshold должен быть от 0 до 1"),
         ],
@@ -822,3 +942,108 @@ def test_real_model_evaluate(tmp_path, capsys):
     assert model["wer"] <= 0.1
     assert model["speed"] > 1
     assert capsys.readouterr().out.startswith("Модель")
+
+
+class TestTranscribeChecks:
+    def test_paths_after_options(self, fake, files, tmp_path):
+        out = tmp_path / "out"
+        main(
+            ["transcribe", str(files / "a.wav"), "-o", str(out), "-f", "txt", str(files / "b.wav")]
+        )
+        assert sorted(path.name for path in out.iterdir()) == ["a.txt", "b.txt"]
+
+    def test_unknown_option_after_paths(self, fake, files, capsys):
+        assert run(["transcribe", str(files / "a.wav"), "--bogus"]) == 2
+        assert "неизвестные аргументы: --bogus" in capsys.readouterr().err
+
+    def test_extra_argument_of_other_command(self, fake, files, capsys):
+        assert run(["serve", "лишнее"]) == 2
+        assert "неизвестные аргументы: лишнее" in capsys.readouterr().err
+
+    def test_quantization_any_case(self, fake, files):
+        main(["transcribe", str(files / "a.wav"), "-q", "--quantization", "INT8"])
+        main(["transcribe", str(files / "a.wav"), "-q", "--quantization", "None"])
+        assert [transcriber.kwargs["quantization"] for transcriber in fake] == ["int8", None]
+
+    def test_unknown_quantization(self, fake, files, capsys):
+        assert run(["transcribe", str(files / "a.wav"), "--quantization", "int4"]) == 2
+        assert "аргумент --quantization: неизвестное значение 'int4'" in capsys.readouterr().err
+        assert fake == []
+
+    def test_warning_in_one_line(self, capsys):
+        cli._show_warning(UserWarning("У модели m нет весов int8"), UserWarning, "x.py", 70)
+        assert capsys.readouterr().err == "stt-ru: предупреждение: У модели m нет весов int8\n"
+
+    def test_warning_with_closed_stderr(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "stderr", None)
+        cli._show_warning(UserWarning("текст"), UserWarning, "x.py", 70)
+        assert capsys.readouterr().out == ""
+
+    def test_warnings_shown_by_command(self, fake, files):
+        with warnings.catch_warnings():
+            main(["transcribe", str(files / "a.wav"), "-q"])
+            assert warnings.showwarning is cli._show_warning
+
+    def test_empty_formats(self, fake, files, tmp_path, capsys):
+        args = ["transcribe", str(files), "-o", str(tmp_path), "-f", ",", "--delete-source"]
+        assert run(args) == 2
+        assert "не задано ни одного формата" in capsys.readouterr().err
+        assert (files / "a.wav").exists() and fake == []
+
+    def test_output_dir_is_file(self, fake, files, tmp_path, capsys):
+        target = tmp_path / "out"
+        target.write_text("", encoding="utf-8")
+        assert run(["transcribe", str(files), "-o", str(target)]) == 2
+        assert f"{target} - файл, а нужен каталог" in capsys.readouterr().err
+        assert fake == []
+
+    def test_summary_is_directory(self, fake, files, tmp_path, capsys):
+        (tmp_path / "all.csv").mkdir()
+        assert run(["transcribe", str(files), "--summary", str(tmp_path / "all.csv")]) == 2
+        assert "- каталог, а нужен файл" in capsys.readouterr().err
+
+    def test_empty_output_dir(self, fake, files, capsys):
+        assert run(["transcribe", str(files), "-o", ""]) == 2
+        assert "Путь результата не задан" in capsys.readouterr().err
+
+    def test_closed_stdout(self, fake, files, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "stdout", None)
+        assert run(["transcribe", str(files / "a.wav")]) == 1
+        assert "stt-ru: ошибка: вывод закрыт" in capsys.readouterr().err
+        assert fake == []
+
+    def test_same_names_printed_with_paths(self, fake, tmp_path, capsys):
+        first, second = tmp_path / "d1" / "a.wav", tmp_path / "d2" / "a.wav"
+        for path in (first, second):
+            path.parent.mkdir()
+            path.write_bytes(b"audio")
+        main(["transcribe", str(first), str(second), "-f", "jsonl", "-q"])
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert sorted({row["source"] for row in rows}) == [str(first), str(second)]
+        assert (
+            run(["transcribe", str(first), str(second), "--summary", str(tmp_path / "a.csv")]) == 2
+        )
+        assert "совпадают имена результатов" in capsys.readouterr().err
+
+    @pytest.mark.skipif(
+        sys.platform == "win32" or os.geteuid() == 0, reason="права каталогов POSIX"
+    )
+    def test_unreadable_directory(self, fake, files, tmp_path, capsys):
+        locked = files / "locked"
+        locked.mkdir()
+        locked.chmod(0)
+        try:
+            assert run(["transcribe", str(files), "-r", "-o", str(tmp_path / "out")]) == 2
+        finally:
+            locked.chmod(0o755)
+        assert f"Нет доступа к каталогу: {locked}" in capsys.readouterr().err
+        assert fake == []
+
+    def test_watch_starts_with_name_conflicts(self, fake, files, tmp_path, monkeypatch):
+        (files / "a.mp3").write_bytes(b"audio")
+        calls = []
+        monkeypatch.setattr(
+            cli, "watch", lambda batch, paths, **kwargs: calls.append(paths) or WatchReport()
+        )
+        main(["transcribe", str(files), "-o", str(tmp_path / "out"), "--watch", "-q"])
+        assert calls == [[str(files)]]
