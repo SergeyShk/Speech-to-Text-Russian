@@ -39,4 +39,6 @@ uv sync --all-extras --group notebooks
 uv run jupyter lab notebooks/
 ```
 
+The `stt-ru` commands in the notebooks run in `%%bash` cells: bash is available on Linux, macOS and Colab; on Windows the bash from [Git for Windows](https://gitforwindows.org/) must be in `PATH`.
+
 `make notebooks` runs all notebooks, writes the outputs to the files and removes the execution metadata; the `notebooks.yml` workflow runs the notebooks on a schedule and on demand.

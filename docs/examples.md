@@ -39,4 +39,6 @@ uv sync --all-extras --group notebooks
 uv run jupyter lab notebooks/
 ```
 
+Команды `stt-ru` в ноутбуках выполняются в ячейках `%%bash`: в Linux, macOS и Colab bash есть, в Windows нужен bash из [Git for Windows](https://gitforwindows.org/) в `PATH`.
+
 Команда `make notebooks` выполняет все ноутбуки, записывает выводы в файлы и убирает метаданные выполнения; workflow `notebooks.yml` прогоняет ноутбуки по расписанию и вручную.
