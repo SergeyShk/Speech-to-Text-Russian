@@ -182,6 +182,36 @@ class TestFindJobs:
         assert [job.label for job in jobs] == ["a.wav", "b.MP3"]
 
     @posix_permissions
+    def test_untraversable_subdirectory_skipped(self, calls):
+        locked = calls / "sub"
+        locked.chmod(0o644)
+        try:
+            messages = []
+            jobs = find_jobs([calls], recursive=True, log=messages.append)
+            with pytest.raises(PermissionError, match=f"Нет доступа к каталогу: {locked}"):
+                find_jobs([locked])
+        finally:
+            locked.chmod(0o755)
+        assert messages == [f"Нет доступа к каталогу: {locked}"]
+        assert [job.label for job in jobs] == ["a.wav", "b.MP3"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="именованных каналов mkfifo в Windows нет")
+    def test_named_pipe_skipped(self, tmp_path):
+        os.mkfifo(tmp_path / "pipe.wav")
+        assert find_jobs([tmp_path]) == []
+
+    def test_file_removed_while_searching(self, calls, monkeypatch):
+        stat = Path.stat
+
+        def vanishing(self, *args, **kwargs):
+            if self.name == "a.wav":
+                raise FileNotFoundError(self)
+            return stat(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", vanishing)
+        assert [job.label for job in find_jobs([calls])] == ["b.MP3"]
+
+    @posix_permissions
     def test_unreadable_argument(self, calls):
         calls.chmod(0)
         try:

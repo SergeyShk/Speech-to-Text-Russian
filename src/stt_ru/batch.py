@@ -1,6 +1,7 @@
 import dataclasses
 import math
 import os
+import stat
 import struct
 import sys
 import threading
@@ -160,22 +161,30 @@ def find_jobs(
 
 def _directory_jobs(directory: Path, recursive: bool, log: Log) -> list[Job]:
     jobs = []
-    denied: list[OSError] = []
+    denied: list[str] = []
     # os.walk, в отличие от glob, сообщает о каталогах, которые не удалось прочитать
-    for root, folders, files in os.walk(directory, onerror=denied.append):
+    for root, folders, files in os.walk(directory, onerror=lambda e: denied.append(e.filename)):
         folders[:] = [name for name in folders if not name.startswith(".")] if recursive else []
         for name in files:
             file = Path(root, name)
             if name.startswith(".") or file.suffix.lower() not in AUDIO_SUFFIXES:
                 continue
-            if file.is_file():
+            try:
+                info = file.stat()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                # Каталог читается, но не обходится (нет права x): его файлы недоступны
+                denied.append(root)
+                break
+            if stat.S_ISREG(info.st_mode):
                 relative = file.relative_to(directory)
                 jobs.append(Job(file, relative.with_suffix(""), relative.as_posix()))
-    for error in denied:
+    for path in denied:
         # Недоступен сам каталог из аргументов - ошибка; вложенный пропускается
-        if Path(error.filename) == directory:
+        if Path(path) == directory:
             raise PermissionError(f"Нет доступа к каталогу: {directory}")
-        log(f"Нет доступа к каталогу: {error.filename}")
+        log(f"Нет доступа к каталогу: {path}")
     return sorted(jobs, key=lambda job: job.source.relative_to(directory).parts)
 
 
@@ -626,10 +635,10 @@ class _Watch:
 
 def _signature(path: Path) -> Signature | None:
     try:
-        stat = path.stat()
+        info = path.stat()
     except OSError:
         return None
-    return stat.st_mtime, stat.st_size
+    return info.st_mtime, info.st_size
 
 
 def _complete(path: Path) -> bool:
