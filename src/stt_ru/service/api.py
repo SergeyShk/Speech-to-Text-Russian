@@ -44,7 +44,7 @@ MEDIA_TYPES = {
     "csv": "text/csv; charset=utf-8",
 }
 PAGE_POLICY = (
-    "default-src 'self'; img-src 'self' data:; media-src 'self'; object-src 'none'; "
+    "default-src 'self'; img-src 'self'; media-src 'self'; object-src 'none'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 
