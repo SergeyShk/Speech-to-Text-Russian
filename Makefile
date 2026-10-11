@@ -86,6 +86,7 @@ docs-deploy: deps ## Задеплоить документацию
 notebooks: uv ## Выполнить ноутбуки из notebooks/ и записать вывод в файлы
 	uv sync --all-extras --group notebooks
 	uv run pytest --nbmake --overwrite $(NOTEBOOKS_PATH) -p no:cacheprovider
+	uv run jupyter nbconvert --coalesce-streams $(NOTEBOOKS_PATH)/*.ipynb
 	uv run nbstripout --keep-output --keep-count --extra-keys metadata.language_info.version $(NOTEBOOKS_PATH)/*.ipynb
 
 docker: ## Собрать Docker-образ для CPU
