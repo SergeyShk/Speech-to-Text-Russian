@@ -8,7 +8,7 @@ import pytest
 import soundfile as sf
 
 from stt_ru.audio import Audio, find_ffmpeg, load_audio, loader
-from stt_ru.exceptions import AudioError, SttRuError
+from stt_ru.exceptions import AudioError, ParameterError, SttRuError
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -137,6 +137,106 @@ class TestAudio:
 
     def test_error_hierarchy(self):
         assert issubclass(AudioError, SttRuError)
+
+
+class TestPeaks:
+    def test_parts(self):
+        samples = np.zeros((10, 2), dtype=np.float32)
+        samples[2, 0], samples[7, 1], samples[9, 0] = -0.8, 0.5, 0.3
+        assert Audio(samples, 8000).peaks(3).tolist() == [
+            [pytest.approx(0.8), 0.0, pytest.approx(0.3)],
+            [0.0, pytest.approx(0.5), 0.0],
+        ]
+
+    def test_fewer_frames_than_points(self):
+        samples = np.array([[0.1], [-0.2]], dtype=np.float32)
+        assert Audio(samples, 8000).peaks(5).tolist() == [[pytest.approx(0.1), pytest.approx(0.2)]]
+
+    def test_empty(self):
+        assert Audio(np.zeros((0, 2), dtype=np.float32), 8000).peaks(4).shape == (2, 0)
+
+    def test_blocks(self):
+        rng = np.random.default_rng(0)
+        samples = rng.uniform(-1, 1, (3_000_017, 2)).astype(np.float32)
+        size = -(-len(samples) // 1000)
+        padded = np.zeros((1000 * size, 2), dtype=np.float32)
+        padded[: len(samples)] = np.abs(samples)
+        expected = padded.reshape(1000, size, 2).max(axis=1).T
+        assert np.array_equal(Audio(samples, 16000).peaks(1000), expected)
+
+    @pytest.mark.parametrize("points", [0, -1])
+    def test_wrong_points(self, points):
+        with pytest.raises(ParameterError, match="не меньше 1"):
+            Audio(stereo(), 8000).peaks(points)
+
+
+class TestMaxDuration:
+    def test_short_enough(self, wav):
+        assert load_audio(wav, max_duration=1.0).duration == 1.0
+
+    def test_header_checked_before_reading(self, wav, monkeypatch):
+        monkeypatch.setattr(sf.SoundFile, "read", lambda *args, **kwargs: pytest.fail("read"))
+        with pytest.raises(AudioError, match=r"Запись длиннее 0\.5 с"):
+            load_audio(wav, max_duration=0.5)
+
+    def test_minutes_in_message(self, tmp_path):
+        path = tmp_path / "long.wav"
+        sf.write(path, np.zeros((8000 * 61, 1), dtype=np.float32), 8000, subtype="PCM_16")
+        with pytest.raises(AudioError, match="Запись длиннее 1 мин"):
+            load_audio(path, max_duration=60)
+
+    def test_ffmpeg_stops_after_limit(self, tmp_path, monkeypatch):
+        path = tmp_path / "long.m4a"
+        command = [FFMPEG, "-nostdin", "-v", "error", "-f", "lavfi", "-i"]
+        command += ["sine=frequency=440:duration=30", "-c:a", "aac", str(path)]
+        subprocess.run(command, check=True)
+        commands = []
+        run = subprocess.run
+
+        def spy(command, **kwargs):
+            commands.append(command)
+            return run(command, **kwargs)
+
+        monkeypatch.setattr(loader.subprocess, "run", spy)
+        with pytest.raises(AudioError, match="Запись длиннее 2 с"):
+            load_audio(path, max_duration=2)
+        assert commands[0][commands[0].index("-t") + 1] == "3.000"
+        assert load_audio(path, max_duration=40).duration == pytest.approx(30, abs=0.1)
+
+    def test_mp3_header_not_trusted(self, tmp_path, monkeypatch):
+        path = tmp_path / "call.mp3"
+        sf.write(path, stereo(), 8000, format="MP3")
+        checks = []
+        check = loader._check_duration
+
+        def spy(duration, limit):
+            checks.append((duration, limit))
+            check(duration, limit)
+
+        monkeypatch.setattr(loader, "_check_duration", spy)
+        audio = load_audio(path, max_duration=1.5)
+        assert checks == [(audio.duration, 1.5)]
+
+    def test_large_limit_for_ffmpeg(self, m4a, monkeypatch):
+        commands = []
+        run = subprocess.run
+
+        def spy(command, **kwargs):
+            commands.append(command)
+            return run(command, **kwargs)
+
+        monkeypatch.setattr(loader.subprocess, "run", spy)
+        assert load_audio(m4a, max_duration=1_200_000).duration == pytest.approx(1.0, abs=0.05)
+        assert commands[0][commands[0].index("-t") + 1] == "1200001.000"
+
+    def test_unknown_length(self, pipe_flac):
+        with pytest.raises(AudioError, match=r"Запись длиннее 0\.25 с"):
+            load_audio(pipe_flac, max_duration=0.25)
+
+    @pytest.mark.parametrize("value", [0, -1])
+    def test_wrong_value(self, wav, value):
+        with pytest.raises(ParameterError, match="должна быть положительной"):
+            load_audio(wav, max_duration=value)
 
 
 class TestLoadAudio:

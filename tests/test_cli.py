@@ -2,12 +2,15 @@ import importlib
 import io
 import json
 import runpy
+import socket
 import sys
+import tempfile
 from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import uvicorn
 
 import stt_ru
 from stt_ru import Segment, Transcript, cli
@@ -608,6 +611,185 @@ class TestEvaluate:
         out = capsys.readouterr().out
         assert out.startswith("использование: stt-ru evaluate")
         assert "РАЗМЕТКА" in out and "--output" in out and "--vad-threshold" in out
+
+
+bind_error = cli._bind_error
+
+
+class TestServe:
+    @pytest.fixture
+    def server(self, monkeypatch):
+        runs = []
+
+        def run(app, **kwargs):
+            jobs = app.state.settings.jobs
+            runs.append((app.state.settings, kwargs, jobs.directory.is_dir(), tempfile.tempdir))
+
+        monkeypatch.setattr(uvicorn, "run", run)
+        monkeypatch.setattr(cli, "_bind_error", lambda host, port: None)
+        monkeypatch.delenv("STT_RU_TOKEN", raising=False)
+        return runs
+
+    def test_defaults(self, fake, server, capsys):
+        before = tempfile.tempdir
+        main(["serve"])
+        ((settings, kwargs, existed, temporary),) = server
+        assert temporary == before
+        assert kwargs == {
+            "host": "127.0.0.1",
+            "port": 8000,
+            "log_level": "info",
+            "access_log": False,
+            "timeout_graceful_shutdown": 10,
+        }
+        assert (settings.token, settings.max_size) == (None, 500 << 20)
+        jobs = settings.jobs
+        assert (jobs.max_queue, jobs.max_duration, jobs.keep) == (100, 10800, 86400)
+        assert len(jobs._threads) == 1
+        assert existed and not jobs.directory.exists()
+        assert fake[0].kwargs == {
+            "quantization": "int8",
+            "model_dir": None,
+            "providers": None,
+            "vad": VadOptions(),
+            "split_channels": True,
+            "ffmpeg": None,
+        }
+        err = capsys.readouterr().err
+        assert "Загрузка модели gigaam-v3-e2e-rnnt..." in err
+        assert (
+            "Веб-интерфейс: http://127.0.0.1:8000, описание API: http://127.0.0.1:8000/docs" in err
+        )
+        assert "без токена" not in err
+
+    def test_options(self, fake, server, tmp_path, capsys):
+        before = tempfile.tempdir
+        main(
+            [
+                "serve", "--host", "0.0.0.0", "--port", "9000", "-j", "2", "--max-size", "1.5",
+                "--max-duration", "30", "--max-queue", "5", "--keep", "0.5", "--data-dir",
+                str(tmp_path), "-q", "-m", "t-tech/t-one", "--mono", "--device", "cpu",
+            ]
+        )  # fmt: skip
+        ((settings, kwargs, _, temporary),) = server
+        assert temporary == str(settings.jobs.directory)
+        assert tempfile.tempdir == before
+        assert (kwargs["host"], kwargs["port"], kwargs["log_level"]) == (
+            "0.0.0.0",
+            9000,
+            "warning",
+        )
+        jobs = settings.jobs
+        assert settings.max_size == int(1.5 * (1 << 20))
+        assert (jobs.max_queue, jobs.max_duration, jobs.keep) == (5, 1800, 1800)
+        assert len(jobs._threads) == 2
+        assert jobs.directory.parent == tmp_path
+        assert fake[0].model == "t-tech/t-one"
+        assert fake[0].kwargs["split_channels"] is False
+        assert fake[0].kwargs["providers"] == ["CPUExecutionProvider"]
+        assert capsys.readouterr().err == (
+            "stt-ru: предупреждение: сервис доступен по сети без токена; задайте токен "
+            "в переменной окружения STT_RU_TOKEN\n"
+        )
+
+    def test_token(self, fake, server, monkeypatch, capsys):
+        monkeypatch.setenv("STT_RU_TOKEN", "секрет")
+        main(["serve", "--host", "0.0.0.0", "-q"])
+        assert server[0][0].token == "секрет"
+        assert capsys.readouterr().err == ""
+
+    def test_closed_stderr(self, fake, server, monkeypatch):
+        class Closed(io.StringIO):
+            def write(self, text):
+                raise BrokenPipeError
+
+        monkeypatch.setattr(sys, "stderr", Closed())
+        main(["serve", "--host", "0.0.0.0"])
+        assert len(server) == 1
+
+    def test_ipv6(self, fake, server, capsys):
+        main(["serve", "--host", "::1"])
+        assert "Веб-интерфейс: http://[::1]:8000," in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            (["--port", "0"], "порт должен быть от 1 до 65535: 0"),
+            (["--port", "65536"], "порт должен быть от 1 до 65535: 65536"),
+            (["-j", "0"], "--workers должен быть положительным: 0"),
+            (["--max-size", "0"], "--max-size должен быть положительным: 0"),
+            (["--max-duration", "-1"], "--max-duration должен быть положительным: -1"),
+            (["--max-queue", "0"], "--max-queue должен быть положительным: 0"),
+            (["--keep", "0"], "--keep должен быть положительным: 0"),
+            (["--data-dir", "missing-dir"], "каталога нет: missing-dir"),
+            (["--vad-threshold", "2"], "threshold должен быть от 0 до 1"),
+        ],
+    )
+    def test_wrong_arguments(self, fake, server, capsys, arguments, message):
+        assert run(["serve", *arguments]) == 2
+        assert message in capsys.readouterr().err
+        assert fake == [] and server == []
+
+    def test_unavailable_device(self, fake, server, monkeypatch, capsys):
+        monkeypatch.setattr(cli.rt, "get_available_providers", lambda: ["CPUExecutionProvider"])
+        assert run(["serve", "--device", "cuda"]) == 2
+        assert "устройство cuda недоступно" in capsys.readouterr().err
+
+    def test_model_error(self, server, monkeypatch, capsys):
+        def broken(*args, **kwargs):
+            raise ModelError("Не удалось загрузить модель x: нет сети")
+
+        monkeypatch.setattr(cli, "Transcriber", broken)
+        assert run(["serve"]) == 1
+        assert "stt-ru: ошибка: Не удалось загрузить модель x: нет сети" in capsys.readouterr().err
+        assert server == []
+
+    @pytest.mark.parametrize("module", ["uvicorn", "fastapi"])
+    def test_missing_dependency(self, fake, server, monkeypatch, capsys, module):
+        monkeypatch.setitem(sys.modules, module, None)
+        monkeypatch.delitem(sys.modules, "stt_ru.service", raising=False)
+        monkeypatch.delitem(sys.modules, "stt_ru.service.api", raising=False)
+        assert run(["serve"]) == 1
+        assert (
+            f"stt-ru: ошибка: Для сервиса нужен пакет {module}: pip install 'stt-ru[service]'"
+            in capsys.readouterr().err
+        )
+        assert fake == []
+
+    def test_busy_port(self, fake, server, monkeypatch, capsys):
+        monkeypatch.setattr(cli, "_bind_error", bind_error)
+        with socket.create_server(("127.0.0.1", 0)) as busy:
+            port = busy.getsockname()[1]
+            assert run(["serve", "--port", str(port)]) == 1
+        err = capsys.readouterr().err
+        assert f"stt-ru: ошибка: не удалось занять адрес 127.0.0.1:{port}: " in err
+        assert fake == [] and server == []
+
+    def test_unknown_host(self, fake, server, monkeypatch, capsys):
+        monkeypatch.setattr(cli, "_bind_error", bind_error)
+        assert run(["serve", "--host", "no-such-host.invalid"]) == 1
+        assert "не удалось занять адрес no-such-host.invalid:8000" in capsys.readouterr().err
+        assert fake == []
+
+    def test_free_address(self):
+        assert bind_error("127.0.0.1", 0) is None
+
+    def test_closes_queue_on_error(self, fake, server, monkeypatch, tmp_path):
+        directories = []
+
+        def run_server(app, **kwargs):
+            directories.append(app.state.settings.jobs.directory)
+            raise SystemExit(1)
+
+        monkeypatch.setattr(uvicorn, "run", run_server)
+        assert run(["serve", "--data-dir", str(tmp_path)]) == 1
+        assert not directories[0].exists()
+
+    def test_help(self, capsys):
+        assert run(["serve", "--help"]) == 0
+        out = capsys.readouterr().out
+        assert out.startswith("использование: stt-ru serve")
+        assert "STT_RU_TOKEN" in out and "--max-duration" in out and "--model" in out
 
 
 @pytest.mark.network

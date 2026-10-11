@@ -49,6 +49,6 @@ make docs-build  # mkdocs build --strict, если менялась докуме
 - `tests/` - тесты, повторяющие структуру пакета; `tests/test_docs.py` сверяет два языка документации.
 - `docs/` - документация MkDocs (Material), `mkdocs.yml` - навигация и перевод её на английский.
 - `.github/workflows/` - CI (`ci.yml`), публикация (`publish.yml`), документация (`docs.yml`).
-- `tools/`, `web/`, `model/`, `examples/`, `start_recognition.py`, `Dockerfile` - версия 0.2 на Kaldi; пакет stt-ru заменяет её, линтеры и хуки её не проверяют.
+- `tools/`, `model/`, `examples/`, `start_recognition.py`, `Dockerfile` - версия 0.2 на Kaldi; пакет stt-ru заменяет её, линтеры и хуки её не проверяют.
 
 Версия хранится только в `pyproject.toml`; релизы выпускаются через GitHub Release, изменения описываются в его заметках, отдельного файла CHANGELOG нет.

@@ -9,7 +9,7 @@ import numpy as np
 import numpy.typing as npt
 import soundfile as sf
 
-from ..exceptions import AudioError
+from ..exceptions import AudioError, ParameterError
 
 Samples = npt.NDArray[np.float32]
 
@@ -107,6 +107,45 @@ class Audio:
         mixed: Samples = self.samples.mean(axis=1, dtype=np.float32)
         return mixed
 
+    def peaks(self, points: int) -> Samples:
+        """
+        Пики для рисования формы волны
+
+        Описание:
+            Запись делится на points равных частей, у каждой части и канала берется
+            наибольшая амплитуда по модулю. Если отсчетов меньше points, частей столько же,
+            сколько отсчетов
+
+        Аргументы:
+            points (int): Число частей
+
+        Вывод:
+            numpy.ndarray: Массив формы (число каналов, число частей)
+
+        Исключения:
+            ParameterError: Если points меньше 1
+
+        Пример использования:
+            >>> import numpy as np
+            >>> from stt_ru.audio import Audio
+            >>> samples = np.array([[0.1, -0.5], [-0.4, 0.2], [0.3, 0.0]], dtype=np.float32)
+            >>> Audio(samples, 8000).peaks(2)
+            array([[0.4, 0.3],
+                   [0.5, 0. ]], dtype=float32)
+        """
+        if points < 1:
+            raise ParameterError(f"Число частей должно быть не меньше 1: {points}")
+        frames = len(self.samples)
+        size = max(1, -(-frames // points))
+        peaks = np.zeros((self.num_channels, -(-frames // size)), dtype=np.float32)
+        # Блоками, чтобы модуль отсчетов не копировал всю запись
+        block = max(1, (1 << 20) // size) * size
+        for start in range(0, frames, block):
+            chunk = np.abs(self.samples[start : start + block])
+            found = np.maximum.reduceat(chunk, np.arange(0, len(chunk), size), axis=0)
+            peaks[:, start // size : start // size + len(found)] = found.T
+        return peaks
+
 
 def find_ffmpeg(ffmpeg: str | os.PathLike[str] | None = None) -> str | None:
     """
@@ -141,6 +180,7 @@ def load_audio(
     *,
     sample_rate: int | None = None,
     ffmpeg: str | os.PathLike[str] | None = None,
+    max_duration: float | None = None,
 ) -> Audio:
     """
     Чтение аудиофайла
@@ -156,14 +196,17 @@ def load_audio(
         path (str): Путь к файлу
         sample_rate (int): Частота дискретизации результата, Гц; None - частота файла
         ffmpeg (str): Путь к программе ffmpeg; None - поиск через find_ffmpeg
+        max_duration (float): Наибольшая длительность записи, с; None - без ограничения.
+            Длинная запись не декодируется целиком: длительность проверяется
+            по заголовку, а ffmpeg останавливается после max_duration
 
     Вывод:
         Audio: Запись со всеми каналами файла
 
     Исключения:
         FileNotFoundError: Если файла нет
-        AudioError: Если частота дискретизации не положительна, файл не читается
-            или для него нужен ffmpeg, а ffmpeg не найден
+        AudioError: Если частота дискретизации не положительна, файл не читается,
+            для него нужен ffmpeg, а ffmpeg не найден, или запись длиннее max_duration
 
     Пример использования:
         >>> from stt_ru.audio import load_audio
@@ -173,19 +216,43 @@ def load_audio(
     """
     if sample_rate is not None and sample_rate <= 0:
         raise AudioError(f"Частота дискретизации должна быть положительной: {sample_rate}")
+    if max_duration is not None and max_duration <= 0:
+        raise ParameterError(f"Наибольшая длительность должна быть положительной: {max_duration}")
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"Файл не найден: {source}")
+    audio = _read(source, sample_rate, ffmpeg, max_duration)
+    if max_duration is not None:
+        _check_duration(audio.duration, max_duration)
+    return audio
+
+
+def _read(
+    source: Path,
+    sample_rate: int | None,
+    ffmpeg: str | os.PathLike[str] | None,
+    max_duration: float | None,
+) -> Audio:
     try:
         with sf.SoundFile(source) as file:
+            # Длина MP3 в заголовке - оценка: ее ограничивает ffmpeg (-t) или проверка после чтения
+            known = 0 < file.frames < _UNKNOWN_FRAMES and file.format != "MP3"
+            if max_duration is not None and known:
+                _check_duration(file.frames / file.samplerate, max_duration)
             reason = _ffmpeg_reason(file, sample_rate, ffmpeg)
             if reason is None:
                 samples: Samples = file.read(dtype="float32", always_2d=True)
                 return Audio(samples, file.samplerate)
     except sf.LibsndfileError as error:
         reason = f"формат не читается библиотекой soundfile ({error})"
-    decoded, rate = _decode(source, sample_rate, _require_ffmpeg(ffmpeg, reason))
+    decoded, rate = _decode(source, sample_rate, _require_ffmpeg(ffmpeg, reason), max_duration)
     return Audio(decoded, rate)
+
+
+def _check_duration(duration: float, limit: float) -> None:
+    if duration > limit:
+        text = f"{limit / 60:g} мин" if limit >= 60 else f"{limit:g} с"
+        raise AudioError(f"Запись длиннее {text}")
 
 
 def _ffmpeg_reason(
@@ -210,7 +277,9 @@ def _require_ffmpeg(ffmpeg: str | os.PathLike[str] | None, reason: str) -> str:
     return found
 
 
-def _decode(path: Path, sample_rate: int | None, ffmpeg: str) -> tuple[Samples, int]:
+def _decode(
+    path: Path, sample_rate: int | None, ffmpeg: str, max_duration: float | None = None
+) -> tuple[Samples, int]:
     with tempfile.TemporaryDirectory() as directory:
         output = Path(directory) / "audio.wav"
         # Префикс file: не дает ffmpeg принять имя файла за протокол вроде concat: или http:
@@ -219,6 +288,9 @@ def _decode(path: Path, sample_rate: int | None, ffmpeg: str) -> tuple[Samples, 
         command += ["-c:a", "pcm_f32le", "-rf64", "auto"]
         if sample_rate is not None:
             command += ["-ar", str(sample_rate)]
+        if max_duration is not None:
+            # Секунда сверх предела отличает слишком длинную запись от записи ровно на предел
+            command += ["-t", f"{max_duration + 1:.3f}"]
         command.append(str(output))
         try:
             result = subprocess.run(

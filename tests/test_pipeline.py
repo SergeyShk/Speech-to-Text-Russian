@@ -244,6 +244,17 @@ def test_resample_after_ffmpeg_decode(fake, tmp_path, monkeypatch):
     assert transcript.duration == pytest.approx(1.0, abs=0.01)
 
 
+def test_load(fake, tmp_path):
+    path = tmp_path / "call.wav"
+    sf.write(path, stereo(rate=12000), 12000, subtype="PCM_16")
+    transcriber = Transcriber(ffmpeg=imageio_ffmpeg.get_ffmpeg_exe())
+    audio = transcriber.load(path)
+    assert (audio.sample_rate, audio.num_channels) == (16000, 2)
+    with pytest.raises(stt_ru.exceptions.AudioError, match=r"Запись длиннее 0\.5 с"):
+        transcriber.load(path, max_duration=0.5)
+    assert fake[0].calls == []
+
+
 def test_missing_file(fake, tmp_path):
     with pytest.raises(FileNotFoundError):
         Transcriber().transcribe(tmp_path / "missing.wav")

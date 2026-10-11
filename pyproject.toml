@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev6"
+version = "0.3.0.dev7"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,6 +44,7 @@ dependencies = [
 [project.optional-dependencies]
 eval = ["jiwer>=3.0.3"]
 ffmpeg = ["imageio-ffmpeg>=0.6"]
+service = ["fastapi>=0.115", "python-multipart>=0.0.18", "starlette>=0.39", "uvicorn>=0.30"]
 
 [project.scripts]
 stt-ru = "stt_ru.cli:main"
@@ -71,7 +72,18 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [dependency-groups]
-test = ["imageio-ffmpeg>=0.6", "jiwer>=3.0.3", "pysubs2>=1.7", "pytest>=8.3", "pytest-cov>=6.0"]
+test = [
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "imageio-ffmpeg>=0.6",
+    "jiwer>=3.0.3",
+    "pysubs2>=1.7",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "python-multipart>=0.0.18",
+    "starlette>=0.39",
+    "uvicorn>=0.30",
+]
 lint = ["mypy>=1.14", "pre-commit>=4.0", "ruff>=0.9"]
 docs = [
     "mkdocs>=1.6",
@@ -89,7 +101,7 @@ dev = [
 target-version = "py311"
 line-length = 99
 src = ["src", "tests"]
-extend-exclude = ["examples", "tools", "web", "start_recognition.py"]
+extend-exclude = ["examples", "tools", "start_recognition.py"]
 
 [tool.ruff.lint]
 select = [
