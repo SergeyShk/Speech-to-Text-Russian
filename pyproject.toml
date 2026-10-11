@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev7"
+version = "0.3.0.dev8"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -101,7 +101,6 @@ dev = [
 target-version = "py311"
 line-length = 99
 src = ["src", "tests"]
-extend-exclude = ["examples", "tools", "start_recognition.py"]
 
 [tool.ruff.lint]
 select = [

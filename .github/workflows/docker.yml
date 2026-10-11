@@ -1,0 +1,130 @@
+name: docker
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "docker/**"
+      - ".dockerignore"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docker.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/sergeyshk/stt-ru
+
+jobs:
+  cpu:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          tags: stt-ru:test
+          cache-from: type=gha,scope=cpu
+          cache-to: type=gha,mode=max,scope=cpu
+      - name: Check commands
+        run: |
+          docker run --rm stt-ru:test --version
+          test "$(docker run --rm --entrypoint id stt-ru:test -u)" = 1000
+          docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -q | tee out.txt
+          grep -F "Канал 1: Наталья, благодарю вас за ожидание." out.txt
+      - name: Check service
+        run: |
+          docker run -d --name stt -p 8000:8000 -e STT_RU_TOKEN=secret stt-ru:test
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' stt)" = healthy ] && break
+            sleep 2
+          done
+          docker inspect -f '{{.State.Health.Status}}' stt | grep -x healthy
+          auth="Authorization: Bearer secret"
+          job="$(curl -sf -H "$auth" -F file=@tests/data/call.wav http://127.0.0.1:8000/v1/transcriptions | jq -r .id)"
+          for i in $(seq 1 60); do
+            [ "$(curl -sf -H "$auth" "http://127.0.0.1:8000/v1/jobs/$job" | jq -r .status)" = done ] && break
+            sleep 1
+          done
+          curl -sf -H "$auth" "http://127.0.0.1:8000/v1/jobs/$job/result?format=srt" | grep -F "Наталья"
+          time docker stop stt
+          docker logs stt
+      - name: Check compose files
+        run: docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml config --quiet
+
+  gpu:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.gpu
+          tags: stt-ru:gpu
+
+  publish:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - file: docker/Dockerfile
+            platforms: linux/amd64,linux/arm64
+            suffix: ""
+          - file: docker/Dockerfile.gpu
+            platforms: linux/amd64
+            suffix: "-gpu"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: type=semver,pattern={{version}}
+          flavor: |
+            latest=auto
+            suffix=${{ matrix.suffix }},onlatest=true
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

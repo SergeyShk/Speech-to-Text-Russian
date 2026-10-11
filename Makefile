@@ -1,4 +1,4 @@
-.PHONY: help uv deps lock lint ruff format mypy test test-cov clean clean-build clean-pyc clean-test build publish publish-test docs-build docs-serve docs-deploy
+.PHONY: help uv deps lock lint ruff format mypy test test-cov clean clean-build clean-pyc clean-test build publish publish-test docs-build docs-serve docs-deploy docker docker-gpu
 .DEFAULT_GOAL := help
 SRC_PATH := src
 TESTS_PATH := tests
@@ -81,3 +81,9 @@ docs-serve: deps ## Запустить сервер документации
 
 docs-deploy: deps ## Задеплоить документацию
 	uv run mkdocs gh-deploy
+
+docker: ## Собрать Docker-образ для CPU
+	docker build -f docker/Dockerfile -t stt-ru .
+
+docker-gpu: ## Собрать Docker-образ для NVIDIA GPU
+	docker build -f docker/Dockerfile.gpu -t stt-ru:gpu .

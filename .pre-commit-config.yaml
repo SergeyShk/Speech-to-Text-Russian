@@ -1,5 +1,4 @@
 default_install_hook_types: [pre-commit, pre-push]
-exclude: ^(examples|model|tools)/|^(start_recognition\.py|motd|Dockerfile|requirements\.txt|\.gitattributes)$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
