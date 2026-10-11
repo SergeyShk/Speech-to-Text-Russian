@@ -571,7 +571,8 @@ class TestEvaluate:
             patch.setattr(FakeTranscriber, "transcribe", transcribe)
             main(["evaluate", str(files / "eval.jsonl"), "-q"])
         assert (
-            "gigaam-v3-e2e-rnnt: в 1 записях распознаны цифры, а в эталоне их нет - WER завышен"
+            "gigaam-v3-e2e-rnnt: в 1 записях цифры есть только в эталоне или только в распознанном "
+            "тексте - если числа записаны по-разному (цифрами и словами), WER завышен"
             in capsys.readouterr().err
         )
 

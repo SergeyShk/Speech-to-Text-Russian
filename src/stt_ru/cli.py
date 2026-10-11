@@ -489,12 +489,13 @@ def evaluate(parser: ArgumentParser, args: argparse.Namespace) -> None:
             failed = True
         else:
             log(f"Отчет: {args.output}")
-    print(format_table(reports))
+    print(format_table(reports), flush=True)
     for report in reports:
         if report.digits_mismatch:
             print(
-                f"{report.model}: в {report.digits_mismatch} записях распознаны цифры, а в эталоне "
-                "их нет - WER завышен; для честного сравнения запишите числа в эталоне цифрами",
+                f"{report.model}: в {report.digits_mismatch} записях цифры есть только в эталоне "
+                "или только в распознанном тексте - если числа записаны по-разному (цифрами "
+                "и словами), WER завышен",
                 file=sys.stderr,
             )
     if failed:

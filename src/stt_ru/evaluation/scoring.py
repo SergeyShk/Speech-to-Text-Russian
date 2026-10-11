@@ -1,6 +1,8 @@
 import time
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import ModuleType
 from typing import Any, TypedDict
 
@@ -51,7 +53,7 @@ class FileResult:
         reference (str): Эталонный текст
         hypothesis (str): Распознанный текст
         duration (float): Длительность записи, с
-        seconds (float): Время распознавания, с
+        seconds (float): Время распознавания записи, с; у строк разметки одного файла общее
         words (int): Слов в нормализованном эталоне
         substitutions (int): Замен слов
         deletions (int): Пропусков слов
@@ -59,6 +61,7 @@ class FileResult:
         chars (int): Символов в нормализованном эталоне
         char_errors (int): Ошибок символов (замены, пропуски, вставки)
         error (str): Текст ошибки распознавания; None - распознано
+        channel (int): Канал из разметки; None - весь текст записи
     """
 
     audio: str
@@ -73,6 +76,7 @@ class FileResult:
     chars: int = 0
     char_errors: int = 0
     error: str | None = None
+    channel: int | None = None
 
     @property
     def wer(self) -> float | None:
@@ -90,9 +94,11 @@ class FileResult:
 
     @property
     def digits_mismatch(self) -> bool:
-        """В распознанном тексте есть цифры, а в эталоне их нет"""
+        """Цифры есть только в эталоне или только в непустом распознанном тексте"""
         return (
-            self.error is None and has_digits(self.hypothesis) and not has_digits(self.reference)
+            self.error is None
+            and bool(self.hypothesis.strip())
+            and has_digits(self.hypothesis) != has_digits(self.reference)
         )
 
 
@@ -137,13 +143,14 @@ class ModelReport:
     @property
     def speed(self) -> float | None:
         """Во сколько раз распознавание быстрее реального времени; None - нечего считать"""
-        seconds = sum(result.seconds for result in self.scored)
-        duration = sum(result.duration for result in self.scored)
+        files = {result.audio: result for result in self.scored}.values()
+        seconds = sum(result.seconds for result in files)
+        duration = sum(result.duration for result in files)
         return duration / seconds if seconds > 0 else None
 
     @property
     def digits_mismatch(self) -> int:
-        """Сколько записей с цифрами в распознанном тексте и без цифр в эталоне"""
+        """Сколько записей, где цифры есть только в эталоне или только в распознанном тексте"""
         return sum(result.digits_mismatch for result in self.files)
 
     def to_dict(self) -> dict[str, Any]:
@@ -215,8 +222,9 @@ def evaluate(
     Описание:
         Эталон и распознанный текст нормализуются (см. normalize), ошибки слов и символов
         считаются расстоянием Левенштейна (jiwer). Для стереозаписи с каналом сравнивается
-        текст этого канала; если дорожка одна, канал не учитывается. Ошибка записи
-        не останавливает оценку
+        текст этого канала; если дорожка одна, канал не учитывается. Файл, который встречается
+        в разметке несколько раз (например, по строке на канал), распознается один раз. Ошибка
+        записи не останавливает оценку
 
     Аргументы:
         transcriber (Transcriber): Распознаватель
@@ -232,17 +240,27 @@ def evaluate(
     """
     jiwer = require_jiwer()
     report = ModelReport(transcriber.recognizer.model)
+    uses = Counter(sample.audio for sample in samples)
+    recognized: dict[Path, tuple[Transcript, float] | str] = {}
     for number, sample in enumerate(samples, 1):
         prefix = f"[{report.model} {number}/{len(samples)}] {sample.audio}"
         if sample.channel is not None:
             prefix += f", канал {sample.channel}"
-        started = time.perf_counter()
+        outcome = recognized.pop(sample.audio, None) or _recognize(transcriber, sample.audio)
+        uses[sample.audio] -= 1
+        if uses[sample.audio]:
+            recognized[sample.audio] = outcome
         try:
-            transcript = transcriber.transcribe(sample.audio)
-            seconds = time.perf_counter() - started
+            if isinstance(outcome, str):
+                raise ParameterError(outcome)
+            transcript, seconds = outcome
             hypothesis = _hypothesis(transcript, sample.channel)
-        except Exception as error:
-            report.files.append(FileResult(str(sample.audio), sample.text, error=str(error)))
+        except ParameterError as error:
+            report.files.append(
+                FileResult(
+                    str(sample.audio), sample.text, error=str(error), channel=sample.channel
+                )
+            )
             errors(f"{prefix}: ошибка - {error}")
             continue
         result = FileResult(
@@ -252,10 +270,21 @@ def evaluate(
             transcript.duration,
             seconds,
             **_counts(jiwer, normalize(sample.text), normalize(hypothesis)),
+            channel=sample.channel,
         )
         report.files.append(result)
         log(f"{prefix}: WER {_percent(result.wer)}, CER {_percent(result.cer)}")
     return report
+
+
+def _recognize(transcriber: Transcriber, path: Path) -> tuple[Transcript, float] | str:
+    started = time.perf_counter()
+    try:
+        transcript = transcriber.transcribe(path)
+    except Exception as error:
+        # Текст, а не исключение: трассировка держала бы в памяти аудио, пока файл в кэше
+        return str(error) or type(error).__name__
+    return transcript, time.perf_counter() - started
 
 
 def _percent(value: float | None) -> str:

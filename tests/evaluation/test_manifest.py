@@ -68,11 +68,28 @@ class TestCsv:
         with pytest.raises(ParameterError, match=message):
             load_manifest(manifest)
 
-    @pytest.mark.parametrize("channel", ["-1", "левый", "1.5"])
+    @pytest.mark.parametrize("channel", ["-1", "левый", "1.5", "²"])
     def test_wrong_channel(self, audio, channel):
         manifest = audio / "eval.csv"
         manifest.write_text(f"audio,text,channel\na.wav,да,{channel}\n", encoding="utf-8")
         with pytest.raises(ParameterError, match=f"строка 2: канал должен быть .*: {channel}"):
+            load_manifest(manifest)
+
+    @pytest.mark.parametrize("delimiter", [";", "\t"])
+    def test_delimiter(self, audio, delimiter):
+        manifest = audio / "eval.csv"
+        rows = ["Audio ;Text; Channel", "a.wav;да, нет;0", "b.mp3;Ответ;", ";;", ""]
+        text = "\r\n".join(rows).replace(";", delimiter)
+        manifest.write_text(text, encoding="utf-8-sig", newline="")
+        assert load_manifest(manifest) == [
+            Sample(audio / "a.wav", "да, нет", 0),
+            Sample(audio / "b.mp3", "Ответ"),
+        ]
+
+    def test_blank_rows(self, audio):
+        manifest = audio / "eval.csv"
+        manifest.write_text("audio,text\n , \na.wav,да\n,,,\n,\n,нет\n", encoding="utf-8")
+        with pytest.raises(ParameterError, match="строка 6: нет пути к аудио"):
             load_manifest(manifest)
 
 
@@ -87,6 +104,11 @@ class TestJsonl:
             Sample(audio / "a.wav", "да"),
             Sample(audio / "b.mp3", "нет", 0),
         ]
+
+    def test_unicode_line_separators(self, audio):
+        text = "раз\u2028два\u2029три\x85четыре"
+        manifest = write_jsonl(audio / "eval.jsonl", [{"audio": "a.wav", "text": text}])
+        assert load_manifest(manifest) == [Sample(audio / "a.wav", text)]
 
     def test_channel_as_string_or_null(self, audio):
         rows = [

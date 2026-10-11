@@ -74,7 +74,7 @@ def _sample(base: Path, row: dict[str, object], where: str) -> Sample:
         number = None
     elif isinstance(channel, int) and not isinstance(channel, bool):
         number = channel
-    elif isinstance(channel, str) and channel.strip().isdigit():
+    elif isinstance(channel, str) and channel.strip().isdecimal():
         number = int(channel)
     else:
         number = -1
@@ -87,19 +87,36 @@ def _not_utf8(path: Path) -> ParameterError:
     return ParameterError(f"{path}: файл не в кодировке UTF-8, пересохраните его в UTF-8")
 
 
+def _columns(header: str, delimiter: str) -> list[str]:
+    return [name.strip().lower() for name in next(csv.reader([header], delimiter=delimiter), [])]
+
+
 def _from_csv(path: Path) -> list[Sample]:
     # Эталон многочасовой записи длиннее стандартного предела поля csv в 128 КБ
     limit = csv.field_size_limit(2**31 - 1)
     try:
         with path.open(encoding="utf-8-sig", newline="") as file:
-            reader = csv.DictReader(file)
-            missing = {"audio", "text"} - set(reader.fieldnames or [])
+            header = file.readline()
+            # Excel в русской локали разделяет поля точкой с запятой
+            delimiter = next(
+                (d for d in ",;\t" if {"audio", "text"} <= set(_columns(header, d))), ","
+            )
+            file.seek(0)
+            reader = csv.DictReader(file, delimiter=delimiter)
+            reader.fieldnames = _columns(header, delimiter)
+            missing = {"audio", "text"} - set(reader.fieldnames)
             if missing:
                 raise ParameterError(f"{path}: нет колонок {', '.join(sorted(missing))}")
-            return [
-                _sample(path.parent, dict(row), f"{path}, строка {reader.line_num}")
-                for row in reader
-            ]
+            next(reader.reader)
+            samples = []
+            for row in reader:
+                values = [value for name, value in row.items() if isinstance(name, str)]
+                # Строки из одних разделителей Excel оставляет под таблицей
+                if any(isinstance(value, str) and value.strip() for value in values):
+                    samples.append(
+                        _sample(path.parent, dict(row), f"{path}, строка {reader.line_num}")
+                    )
+            return samples
     except UnicodeDecodeError as error:
         raise _not_utf8(path) from error
     finally:
@@ -108,7 +125,8 @@ def _from_csv(path: Path) -> list[Sample]:
 
 def _from_jsonl(path: Path) -> list[Sample]:
     try:
-        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        # splitlines делит и по U+2028, который json.dumps оставляет внутри строк
+        lines = path.read_text(encoding="utf-8-sig").split("\n")
     except UnicodeDecodeError as error:
         raise _not_utf8(path) from error
     samples = []

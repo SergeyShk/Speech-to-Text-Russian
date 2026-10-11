@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from stt_ru import Segment, Transcript
+from stt_ru.batch import ignore
 from stt_ru.evaluation import (
     FileResult,
     ModelReport,
@@ -22,8 +23,12 @@ class FakeTranscriber:
         self.recognizer = SimpleNamespace(model="fake")
         self.texts = texts
         self.channels = channels
+        self.calls = []
 
     def transcribe(self, path):
+        self.calls.append(path.name)
+        if path.name == "empty-error.wav":
+            raise RuntimeError
         if path.name not in self.texts:
             raise AudioError(f"Не удалось прочитать {path.name}")
         segments = tuple(
@@ -87,6 +92,46 @@ class TestEvaluate:
             "Алло. Добрый день. Да.",
         ]
         assert report.wer == 0
+
+    def test_file_recognized_once(self, tmp_path):
+        transcriber = FakeTranscriber(
+            {"a.wav": [(0, "Алло."), (1, "Да.")], "b.wav": [(0, "Нет."), (1, "Нет.")]}
+        )
+        samples = [
+            Sample(tmp_path / "a.wav", "алло", 0),
+            Sample(tmp_path / "b.wav", "нет нет"),
+            Sample(tmp_path / "a.wav", "да", 1),
+            Sample(tmp_path / "a.wav", "алло да"),
+        ]
+        report = evaluate(transcriber, samples)
+        assert transcriber.calls == ["a.wav", "b.wav"]
+        assert [(r.channel, r.hypothesis, r.wer) for r in report.files] == [
+            (0, "Алло.", 0.0),
+            (None, "Нет. Нет.", 0.0),
+            (1, "Да.", 0.0),
+            (None, "Алло. Да.", 0.0),
+        ]
+        first, _, second, third = report.files
+        assert first.seconds == second.seconds == third.seconds
+
+    def test_failed_file_once(self, tmp_path):
+        transcriber = FakeTranscriber({})
+        samples = [Sample(tmp_path / "a.wav", "алло", 0), Sample(tmp_path / "a.wav", "да", 1)]
+        messages = []
+        report = evaluate(transcriber, samples, errors=messages.append)
+        assert transcriber.calls == ["a.wav"]
+        assert [(r.channel, r.error) for r in report.files] == [
+            (0, "Не удалось прочитать a.wav"),
+            (1, "Не удалось прочитать a.wav"),
+        ]
+        assert len(messages) == 2
+
+    def test_error_without_message(self, tmp_path):
+        transcriber = FakeTranscriber({})
+        samples = [Sample(tmp_path / "empty-error.wav", "да")] * 2
+        report = evaluate(transcriber, samples, errors=ignore)
+        assert transcriber.calls == ["empty-error.wav"]
+        assert [result.error for result in report.files] == ["RuntimeError", "RuntimeError"]
 
     def test_channel_of_single_track(self, tmp_path):
         transcriber = FakeTranscriber({"a.wav": [(None, "Алло.")]}, channels=1)
@@ -153,8 +198,10 @@ class TestFileResult:
         ("reference", "hypothesis", "expected"),
         [
             ("пятнадцать минут", "15 минут", True),
+            ("15 минут", "пятнадцать минут", True),
             ("15 минут", "15 минут", False),
             ("да", "да", False),
+            ("15 минут", " ", False),
         ],
     )
     def test_digits_mismatch(self, reference, hypothesis, expected):
@@ -171,9 +218,17 @@ class TestModelReport:
             0,
         )
 
+    def test_speed_counts_file_once(self):
+        files = [
+            FileResult("a.wav", "алло", "алло", 6.0, 2.0, 1, 0, 0, 0, 4, 0, channel=0),
+            FileResult("a.wav", "да", "да", 6.0, 2.0, 1, 0, 0, 0, 2, 0, channel=1),
+            FileResult("b.wav", "нет", "нет", 4.0, 3.0, 1, 0, 0, 0, 3, 0),
+        ]
+        assert ModelReport("fake", files).speed == 2.0
+
     def test_to_dict(self):
         files = [
-            FileResult("a.wav", "пять минут", "5 минут", 6.0, 2.0, 2, 1, 0, 0, 10, 4),
+            FileResult("a.wav", "пять минут", "5 минут", 6.0, 2.0, 2, 1, 0, 0, 10, 4, channel=1),
             FileResult("b.wav", "да", error="нет файла"),
         ]
         document = ModelReport("fake", files).to_dict()
@@ -200,6 +255,7 @@ class TestModelReport:
                     "chars": 10,
                     "char_errors": 4,
                     "error": None,
+                    "channel": 1,
                     "wer": 0.5,
                     "cer": 0.4,
                 },
@@ -216,6 +272,7 @@ class TestModelReport:
                     "chars": 0,
                     "char_errors": 0,
                     "error": "нет файла",
+                    "channel": None,
                     "wer": None,
                     "cer": None,
                 },
