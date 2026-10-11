@@ -5,6 +5,7 @@ import runpy
 import sys
 from importlib.metadata import version
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,6 +25,7 @@ class FakeTranscriber:
     def __init__(self, model, **kwargs):
         self.model = model
         self.kwargs = kwargs
+        self.recognizer = SimpleNamespace(model=model)
         FakeTranscriber.instances.append(self)
 
     def transcribe(self, path):
@@ -453,9 +455,188 @@ def test_module(monkeypatch, fake, files, capsys):
     assert capsys.readouterr().out.startswith("Канал 0: Текст a.")
 
 
+@pytest.fixture
+def manifest(files):
+    path = files / "eval.csv"
+    path.write_text(
+        "audio,text,channel\na.wav,Текст a,0\nb.wav,Текст b. Вопрос.,\n", encoding="utf-8"
+    )
+    return path
+
+
+class TestEvaluate:
+    def test_table(self, fake, manifest, capsys):
+        main(["evaluate", str(manifest)])
+        captured = capsys.readouterr()
+        header, row = captured.out.splitlines()
+        assert header.split() == [
+            "Модель",
+            "WER,",
+            "%",
+            "CER,",
+            "%",
+            "Скорость",
+            "Записей",
+            "Ошибок",
+        ]
+        model, wer, cer, speed, count, failed = row.split()
+        assert (model, wer, cer, count, failed) == ("gigaam-v3-e2e-rnnt", "20.0", "23.8", "2", "0")
+        assert speed.endswith("x")
+        assert "Записей в разметке: 2" in captured.err
+        assert "Загрузка модели gigaam-v3-e2e-rnnt..." in captured.err
+        assert f"[gigaam-v3-e2e-rnnt 2/2] {manifest.parent / 'b.wav'}: WER 33.3 %" in captured.err
+
+    def test_several_models(self, fake, manifest, capsys):
+        main(["evaluate", str(manifest), "-q", "-m", "a", "--model", "b", "-m", "a"])
+        assert [transcriber.model for transcriber in fake] == ["a", "b"]
+        lines = capsys.readouterr().out.splitlines()
+        assert [line.split()[0] for line in lines] == ["Модель", "a", "b"]
+
+    def test_model_options(self, fake, manifest, tmp_path):
+        main(
+            [
+                "evaluate", str(manifest), "-q", "-m", "t-tech/t-one", "--quantization", "none",
+                "--model-dir", str(tmp_path), "--device", "cpu", "--mono", "--ffmpeg", "ffmpeg",
+                "--max-speech-s", "15",
+            ]
+        )  # fmt: skip
+        assert fake[0].kwargs == {
+            "quantization": None,
+            "model_dir": str(tmp_path),
+            "providers": ["CPUExecutionProvider"],
+            "vad": VadOptions(max_speech_duration_s=15),
+            "split_channels": False,
+            "ffmpeg": "ffmpeg",
+        }
+
+    def test_report(self, fake, manifest, tmp_path, capsys):
+        output = tmp_path / "reports" / "eval.json"
+        main(["evaluate", str(manifest), "-o", str(output)])
+        document = json.loads(output.read_text(encoding="utf-8"))
+        assert document["manifest"] == str(manifest)
+        (model,) = document["models"]
+        assert (model["model"], model["wer"], model["files"]) == ("gigaam-v3-e2e-rnnt", 0.2, 2)
+        assert [result["hypothesis"] for result in model["results"]] == [
+            "Текст a.",
+            "Текст b. Ответ.",
+        ]
+        assert f"Отчет: {output}" in capsys.readouterr().err
+
+    def test_report_not_saved(self, fake, manifest, tmp_path, capsys):
+        output = tmp_path / "eval.json"
+        output.mkdir()
+        assert run(["evaluate", str(manifest), "-o", str(output), "-q"]) == 1
+        captured = capsys.readouterr()
+        assert f"stt-ru: ошибка: отчет не сохранен в {output}" in captured.err
+        assert "gigaam-v3-e2e-rnnt" in captured.out
+
+    def test_directory(self, fake, files, capsys):
+        (files / "a.txt").write_text("текст a ответ", encoding="utf-8")
+        (files / "b.txt").write_text("текст b ответ", encoding="utf-8")
+        main(["evaluate", str(files), "-q"])
+        assert capsys.readouterr().out.splitlines()[1].split()[1:3] == ["0.0", "0.0"]
+
+    def test_failed_file(self, fake, manifest, capsys):
+        with manifest.open("a", encoding="utf-8") as file:
+            file.write("broken.wav,да,\n")
+        (manifest.parent / "broken.wav").write_bytes(b"x")
+        assert run(["evaluate", str(manifest), "-q"]) == 1
+        captured = capsys.readouterr()
+        assert "broken.wav: ошибка - ffmpeg не прочитал файл" in captured.err
+        assert captured.out.splitlines()[1].split()[-2:] == ["3", "1"]
+
+    def test_model_error(self, monkeypatch, manifest, capsys):
+        def transcriber(model, **kwargs):
+            if model == "x":
+                raise ModelError("Не удалось загрузить модель x: нет сети")
+            return FakeTranscriber(model, **kwargs)
+
+        monkeypatch.setattr(cli, "Transcriber", transcriber)
+        assert run(["evaluate", str(manifest), "-q", "-m", "x", "-m", "y"]) == 1
+        captured = capsys.readouterr()
+        assert "stt-ru: ошибка: Не удалось загрузить модель x: нет сети" in captured.err
+        lines = captured.out.splitlines()
+        assert lines[1].startswith("x (не загружена)")
+        assert lines[2].startswith("y ")
+
+    def test_digits(self, fake, files, capsys):
+        (files / "eval.jsonl").write_text(
+            '{"audio": "a.wav", "text": "текст а ответ"}\n', encoding="utf-8"
+        )
+
+        def transcribe(self, path):
+            return Transcript((Segment(0.0, 1.0, "В 15 часов"),), 1.0, 1, self.model, path.name)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(FakeTranscriber, "transcribe", transcribe)
+            main(["evaluate", str(files / "eval.jsonl"), "-q"])
+        assert (
+            "gigaam-v3-e2e-rnnt: в 1 записях цифры есть только в эталоне или только в распознанном "
+            "тексте - если числа записаны по-разному (цифрами и словами), WER завышен"
+            in capsys.readouterr().err
+        )
+
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            (["missing.csv"], "Разметка не найдена"),
+            (["{manifest}", "-o", "eval.csv"], "отчет сохраняется в JSON: eval.csv"),
+            (["{manifest}", "-m", "a", "-m", "b", "--model-dir", "m"], "только для одной модели"),
+            (["{manifest}", "--min-speech-ms", "-1"], "min_speech_duration_ms"),
+        ],
+    )
+    def test_wrong_arguments(self, fake, manifest, capsys, arguments, message):
+        argv = ["evaluate", *(item.format(manifest=manifest) for item in arguments)]
+        assert run(argv) == 2
+        assert message in capsys.readouterr().err
+        assert fake == []
+
+    def test_unavailable_device(self, fake, manifest, monkeypatch, capsys):
+        monkeypatch.setattr(cli.rt, "get_available_providers", lambda: ["CPUExecutionProvider"])
+        assert run(["evaluate", str(manifest), "--device", "cuda"]) == 2
+        assert "устройство cuda недоступно" in capsys.readouterr().err
+        assert fake == []
+
+    def test_missing_jiwer(self, fake, manifest, monkeypatch, capsys):
+        monkeypatch.setitem(sys.modules, "jiwer", None)
+        assert run(["evaluate", str(manifest)]) == 1
+        assert "pip install 'stt-ru[eval]'" in capsys.readouterr().err
+        assert fake == []
+
+    def test_help(self, capsys):
+        assert run(["evaluate", "--help"]) == 0
+        out = capsys.readouterr().out
+        assert out.startswith("использование: stt-ru evaluate")
+        assert "РАЗМЕТКА" in out and "--output" in out and "--vad-threshold" in out
+
+
 @pytest.mark.network
 def test_real_model(capsys):
     main(["transcribe", str(CALL), "-q"])
     out = capsys.readouterr().out
     assert "Канал 1: Наталья, благодарю вас за ожидание." in out
     assert "до свидания" in out.lower()
+
+
+@pytest.mark.network
+def test_real_model_evaluate(tmp_path, capsys):
+    manifest = tmp_path / "eval.jsonl"
+    rows = [
+        {"audio": str(CALL), "channel": 0, "text": "Угу. Угу. До свидания."},
+        {
+            "audio": str(CALL),
+            "channel": 1,
+            "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок "
+            "переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, "
+            "на линии. Я, в свою очередь, с вами прощаюсь. Всего доброго, до свидания.",
+        },
+    ]
+    manifest.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8"
+    )
+    main(["evaluate", str(manifest), "-q", "-o", str(tmp_path / "eval.json")])
+    (model,) = json.loads((tmp_path / "eval.json").read_text(encoding="utf-8"))["models"]
+    assert model["failed"] == 0
+    assert model["wer"] <= 0.1
+    assert model["speed"] > 1
+    assert capsys.readouterr().out.startswith("Модель")

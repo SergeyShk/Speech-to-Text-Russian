@@ -12,3 +12,7 @@ class ModelError(SttRuError):
 
 class ParameterError(SttRuError, ValueError):
     """Недопустимое значение параметра"""
+
+
+class MissingDependencyError(SttRuError, ImportError):
+    """Нет дополнительной зависимости"""

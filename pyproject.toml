@@ -1,6 +1,6 @@
 [project]
 name = "stt-ru"
-version = "0.3.0.dev5"
+version = "0.3.0.dev6"
 description = "Russian speech recognition: Python library, command line tool, web service and Docker image"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,6 +42,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+eval = ["jiwer>=3.0.3"]
 ffmpeg = ["imageio-ffmpeg>=0.6"]
 
 [project.scripts]
@@ -70,7 +71,7 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [dependency-groups]
-test = ["imageio-ffmpeg>=0.6", "pysubs2>=1.7", "pytest>=8.3", "pytest-cov>=6.0"]
+test = ["imageio-ffmpeg>=0.6", "jiwer>=3.0.3", "pysubs2>=1.7", "pytest>=8.3", "pytest-cov>=6.0"]
 lint = ["mypy>=1.14", "pre-commit>=4.0", "ruff>=0.9"]
 docs = [
     "mkdocs>=1.6",
