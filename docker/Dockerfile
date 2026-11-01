@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Образ stt-ru для CPU: docker build -f docker/Dockerfile -t stt-ru .
 
-FROM python:3.12-slim AS build
+FROM python:3.15-slim AS build
 COPY --from=ghcr.io/astral-sh/uv:0.12.12 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -17,7 +17,7 @@ COPY src src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-default-groups --no-editable --extra service --extra ffmpeg --extra eval
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 ARG MODEL=gigaam-v3-e2e-rnnt
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
