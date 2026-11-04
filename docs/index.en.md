@@ -2,7 +2,7 @@
 
 ![stt-ru](img/stt-ru.svg)
 
-**stt-ru** is a tool for Russian speech recognition: a Python library, the `stt-ru` command, a web interface with a REST API and a Docker image. Speech is recognized by the [GigaAM-v3](https://github.com/salute-developers/GigaAM) model through [onnx-asr](https://github.com/istupakov/onnx-asr): the text comes with punctuation and digits, the channels of a stereo recording are recognized as separate speakers, and the result is saved as subtitles and tables.
+**stt-ru** is a tool for Russian speech recognition: a Python library, the `stt-ru` CLI, a web interface with a REST API and a Docker image. Speech is recognized by the [GigaAM-v3](https://github.com/salute-developers/GigaAM) model through [onnx-asr](https://github.com/istupakov/onnx-asr): the text comes with punctuation and digits, the channels of a stereo recording are recognized as separate speakers, and the result is saved as subtitles and tables.
 
 ## Features
 

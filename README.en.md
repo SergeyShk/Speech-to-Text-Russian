@@ -5,7 +5,7 @@
 <h1 align="center">stt-ru</h1>
 
 <p align="center">
-  <b>Speech-to-Text Russian</b> - Russian speech recognition: a Python library, a command line tool, a web service and a Docker image
+  <b>Speech-to-Text Russian</b> - Russian speech recognition: a Python library, a CLI, a web service and a Docker image
 </p>
 
 <p align="center">
@@ -84,7 +84,7 @@ stt-ru serve                                                     # http://127.0.
 PosixPath('call.srt')
 ```
 
-The command messages and speaker names ("Канал N", Channel N) are in Russian.
+The CLI messages and speaker names ("Канал N", Channel N) are in Russian.
 
 Example notebooks are in the [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks) directory: quick start, call analytics, a long recording and subtitles, model evaluation, the web service from Python. Each opens in Colab; descriptions are on the [Examples](https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/) page. The notebooks are in Russian.
 
@@ -135,7 +135,7 @@ Bug reports, ideas and pull requests are welcome, in Russian or English - [issue
     *   pipeline.py - transcription of files and in-memory recordings
     *   result.py - transcription result: segments and recording information
     *   batch.py - batch transcription of files and folder monitoring
-    *   cli.py - the `stt-ru` command
+    *   cli.py - the `stt-ru` CLI
     *   exceptions.py - library exceptions
     *   **audio** - reading audio through soundfile and ffmpeg
     *   **asr** - recognition with an onnx-asr model

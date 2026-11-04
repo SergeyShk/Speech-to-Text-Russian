@@ -5,7 +5,7 @@
 <h1 align="center">stt-ru</h1>
 
 <p align="center">
-  <b>Speech-to-Text Russian</b> - распознавание русской речи: библиотека Python, команда, веб-сервис и Docker-образ
+  <b>Speech-to-Text Russian</b> - распознавание русской речи: библиотека Python, CLI, веб-сервис и Docker-образ
 </p>
 
 <p align="center">
@@ -133,7 +133,7 @@ uv run pre-commit install
     *   pipeline.py - распознавание файлов и записей в памяти
     *   result.py - результат распознавания: фрагменты и сведения о записи
     *   batch.py - пакетное распознавание файлов и мониторинг каталогов
-    *   cli.py - команда `stt-ru`
+    *   cli.py - CLI `stt-ru`
     *   exceptions.py - исключения библиотеки
     *   **audio** - чтение аудио через soundfile и ffmpeg
     *   **asr** - распознавание моделью onnx-asr
