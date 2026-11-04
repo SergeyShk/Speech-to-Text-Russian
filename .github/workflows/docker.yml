@@ -161,5 +161,7 @@ jobs:
           file: ${{ matrix.file }}
           platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name == 'release' }}
+          # Аттестации дают лишние записи без тегов в GHCR; коммит и версия есть в метках образа
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
