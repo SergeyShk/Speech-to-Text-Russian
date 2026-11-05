@@ -32,6 +32,12 @@
 
 [05_web_service.ipynb](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/05_web_service.ipynb) - `stt-ru serve` в фоне с токеном доступа и работа с ним через `httpx`: постановка файла в очередь и ожидание результата, результат в разных форматах, форма волны и запись с перемоткой, ответы с ошибками, удаление задачи, клиент для пакета файлов и запуск того же сервиса в Docker.
 
+## Разделение говорящих
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb)
+
+[06_speakers.ipynb](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb) - разделение говорящих в записи с одной дорожкой: результат и лента разговора, точность на диалогах с известной разметкой, число говорящих и порог, смена говорящего без паузы, сведенный звонок, команда и сервис.
+
 ## Запуск локально
 
 ``` bash
@@ -42,9 +48,3 @@ uv run jupyter lab notebooks/
 Команды `stt-ru` в ноутбуках выполняются в ячейках `%%bash`: в Linux, macOS и Colab bash есть, в Windows нужен bash из [Git for Windows](https://gitforwindows.org/) в `PATH`.
 
 Команда `make notebooks` выполняет все ноутбуки, записывает выводы в файлы и убирает метаданные выполнения; workflow `notebooks.yml` прогоняет ноутбуки по расписанию и вручную.
-
-## Разделение говорящих
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb)
-
-[06_speakers.ipynb](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb) - разделение говорящих в записи с одной дорожкой: результат и лента разговора, точность на диалогах с известной разметкой, число говорящих и порог, смена говорящего без паузы, сведенный звонок, команда и сервис.

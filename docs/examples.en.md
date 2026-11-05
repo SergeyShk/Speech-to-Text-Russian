@@ -32,6 +32,12 @@ Jupyter notebooks in the [notebooks/](https://github.com/SergeyShk/Speech-to-Tex
 
 [05_web_service.ipynb](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/05_web_service.ipynb) - `stt-ru serve` in the background with an access token and working with it through `httpx`: queueing a file and waiting for the result, the result in different formats, the waveform and the recording with seeking, error responses, deleting a job, a client for a batch of files, and running the same service in Docker.
 
+## Speaker separation
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb)
+
+[06_speakers.ipynb](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb) - speaker separation in a single-track recording: the result and the conversation timeline, accuracy on dialogues with known references, the number of speakers and the threshold, a speaker change without a pause, a mixed call, the command and the service.
+
 ## Running locally
 
 ``` bash
@@ -42,9 +48,3 @@ uv run jupyter lab notebooks/
 The `stt-ru` commands in the notebooks run in `%%bash` cells: bash is available on Linux, macOS and Colab; on Windows the bash from [Git for Windows](https://gitforwindows.org/) must be in `PATH`.
 
 `make notebooks` runs all notebooks, writes the outputs to the files and removes the execution metadata; the `notebooks.yml` workflow runs the notebooks on a schedule and on demand.
-
-## Speaker separation
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb)
-
-[06_speakers.ipynb](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb) - speaker separation in a single-track recording: the result and the conversation timeline, accuracy on dialogues with known references, the number of speakers and the threshold, a speaker change without a pause, a mixed call, the command and the service.
