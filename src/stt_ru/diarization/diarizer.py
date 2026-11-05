@@ -32,6 +32,22 @@ MIN_CLEAN = int(0.4 * SAMPLE_RATE)
 MIN_CHUNK = int(0.5 * SAMPLE_RATE)
 # onnx-asr передискретизирует запись целиком: части ограничивают память
 RESAMPLE_BLOCK = 600
+# Память на реплики растет с числом говорящих, а число может прийти от клиента сервиса
+MAX_SPEAKERS = 100
+
+
+def check_speakers(speakers: int | None) -> None:
+    """
+    Проверка числа говорящих
+
+    Аргументы:
+        speakers (int): Точное число говорящих; None - определяется по записи
+
+    Исключения:
+        ParameterError: Если число не от 1 до MAX_SPEAKERS
+    """
+    if speakers is not None and not 1 <= speakers <= MAX_SPEAKERS:
+        raise ParameterError(f"Число говорящих должно быть от 1 до {MAX_SPEAKERS}: {speakers}")
 
 
 @dataclass(frozen=True)
@@ -116,10 +132,9 @@ class Diarizer:
 
         Исключения:
             AudioError: Если отсчеты не одномерный массив float32 или частота не поддерживается
-            ParameterError: Если число говорящих меньше единицы
+            ParameterError: Если число говорящих неверно (см. check_speakers)
         """
-        if speakers is not None and speakers < 1:
-            raise ParameterError(f"Число говорящих должно быть положительным: {speakers}")
+        check_speakers(speakers)
         if samples.ndim != 1 or samples.dtype != np.float32:
             raise AudioError(
                 f"Отсчеты должны быть одномерным массивом float32: {samples.dtype}, "

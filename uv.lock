@@ -3833,7 +3833,7 @@ wheels = [
 
 [[package]]
 name = "stt-ru"
-version = "0.4.0.dev1"
+version = "0.4.0.dev2"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -3915,7 +3915,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", marker = "extra == 'service'", specifier = ">=0.115" },
+    { name = "fastapi", marker = "extra == 'service'", specifier = ">=0.124" },
     { name = "imageio-ffmpeg", marker = "extra == 'ffmpeg'", specifier = ">=0.6" },
     { name = "jiwer", marker = "extra == 'eval'", specifier = ">=3.0.3" },
     { name = "numpy", specifier = ">=1.26" },
@@ -3929,7 +3929,7 @@ provides-extras = ["eval", "ffmpeg", "service"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.124" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "imageio-ffmpeg", specifier = ">=0.6" },
     { name = "jiwer", specifier = ">=3.0.3" },
@@ -3970,7 +3970,7 @@ notebooks = [
     { name = "pyarrow", specifier = ">=17" },
 ]
 test = [
-    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.124" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "imageio-ffmpeg", specifier = ">=0.6" },
     { name = "jiwer", specifier = ">=3.0.3" },

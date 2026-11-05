@@ -46,7 +46,7 @@ stt-ru transcribe calls/ -o out/ --watch --delete-source    # folder monitoring
 | `--interval` | `10` | Pause between folder scans, s |
 | `--min-age` | `10` | How many seconds a file must stay unchanged to be taken |
 | `--diarize` | off | [Separate speakers](#diarization) in a single-track recording |
-| `--speakers` | - | Exact number of speakers in every recording, turns on `--diarize` |
+| `--speakers` | - | Exact number of speakers in every recording, from 1 to 100; turns on `--diarize` |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 The model, device and speech detection parameters (`-m`, `--quantization`, `--model-dir`, `--device`, `--mono`, `--ffmpeg`, `--vad-*`) are shared by all commands and described on the [Models](models.md#options) page. All parameters and files are checked before the model is loaded, including that the output folder and the summary file can be written and the folders given as arguments can be read. An unreadable subfolder is skipped with a message, and the exit code is then 1. If there are no files, the model is not loaded.
@@ -60,7 +60,7 @@ stt-ru transcribe meeting.mp3 --diarize
 stt-ru transcribe call.wav --mono --speakers 2    # channels mixed, exactly two speakers
 ```
 
-*   If the number of speakers is known, pass it in `--speakers`: this prevents extra speakers and keeps similar voices apart.
+*   If the number of speakers is known, pass it in `--speakers`: this also finds a person who speaks very little, about 1-2% of the time. A number below the real one merges people. One or two above it does almost no harm but adds extra speakers with a few segments; a much higher number splits people. There can also be fewer speakers than requested: a voice that never outweighs the others does not reach the result.
 *   Different channels of a stereo recording already separate speakers: for them `--diarize` only prints a warning. To separate speakers in a mixed recording, use `--mono`.
 *   Models without word times (Whisper) give a whole segment to whoever speaks longest in it.
 *   Transcription with `--diarize` takes about one and a half to two times longer. The models it needs are on the [Models](models.md#diarization) page.

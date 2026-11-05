@@ -53,7 +53,7 @@ stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e
 
 ## Speaker separation { #diarization }
 
-[`--diarize`](transcribe.md#diarization) uses two more models. On the first run they are downloaded to the Hugging Face cache (about 35 MB together); `--model-dir` does not apply to them.
+[Speaker separation](transcribe.md#diarization) uses two more models. On first use they are downloaded to the Hugging Face cache (about 35 MB together); `--model-dir` does not apply to them.
 
 | Model | What it does | License |
 | :---- | :----------- | :------ |

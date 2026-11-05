@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from stt_ru.exceptions import ParameterError
+from stt_ru.exceptions import ModelError, ParameterError
 from stt_ru.service import JobQueue, QueueFullError, worker
 
 from .conftest import job_folders, wait, wav_bytes
@@ -224,6 +224,54 @@ class SlowContent(io.BytesIO):
     def read(self, size=-1):
         self.gate.wait(5)
         return super().read(size)
+
+
+class TestSpeakers:
+    def test_defaults(self, jobs, transcriber):
+        job = wait(jobs, submit(jobs).id)
+        assert (job.diarize, job.speakers) == (False, None)
+        assert transcriber.options == [(False, None)]
+
+    def test_job_options(self, jobs, transcriber):
+        job = jobs.submit("call.wav", io.BytesIO(wav_bytes()), speakers=3)
+        assert (job.diarize, job.speakers) == (True, 3)
+        wait(jobs, job.id)
+        assert transcriber.options == [(True, 3)]
+
+    def test_service_defaults(self, jobs, transcriber):
+        transcriber.diarize, transcriber.speakers = True, 2
+        assert jobs.submit("call.wav", io.BytesIO(wav_bytes())).speakers == 2
+        job = jobs.submit("call.wav", io.BytesIO(wav_bytes()), diarize=False)
+        assert (job.diarize, job.speakers) == (False, None)
+
+    @pytest.mark.parametrize(
+        ("options", "message"),
+        [
+            ({"speakers": 0}, "Число говорящих должно быть от 1 до 100"),
+            ({"speakers": 10**12}, "Число говорящих должно быть от 1 до 100"),
+            ({"diarize": False, "speakers": 2}, "разделение говорящих выключено"),
+        ],
+    )
+    def test_wrong_options_before_copy(self, jobs, options, message):
+        with pytest.raises(ParameterError, match=message):
+            jobs.submit("call.wav", io.BytesIO(wav_bytes()), **options)
+        assert job_folders(jobs) == []
+        assert not jobs.full()
+
+
+def test_model_error_hides_path_from_client(transcriber, tmp_path, monkeypatch):
+    def broken(audio, source=None, *, diarize=None, speakers=None):
+        raise ModelError("Не удалось загрузить модели диаризации: /home/user/.cache/hub")
+
+    monkeypatch.setattr(transcriber, "transcribe_audio", broken)
+    errors = []
+    jobs = JobQueue(transcriber, tmp_path, errors=errors.append)
+    try:
+        failed = wait(jobs, submit(jobs).id)
+    finally:
+        jobs.close()
+    assert failed.error == "Не удалось загрузить модели"
+    assert "/home/user/.cache/hub" in errors[0]
 
 
 def test_errors_logged_separately(transcriber, tmp_path):

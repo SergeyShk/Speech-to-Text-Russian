@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from stt_ru import Segment, Transcript
+from stt_ru import Segment, Transcriber, Transcript
 from stt_ru.audio import load_audio
 from stt_ru.exceptions import AudioError
 from stt_ru.service import JobQueue
@@ -22,12 +22,18 @@ class FakeTranscriber:
         self.gate = threading.Event()
         self.gate.set()
         self.sources = []
+        self.options = []
+        self.diarize = False
+        self.speakers = None
+
+    speaker_options = Transcriber.speaker_options
 
     def load(self, path, *, max_duration=None):
         return load_audio(path, max_duration=max_duration)
 
-    def transcribe_audio(self, audio, source=None):
+    def transcribe_audio(self, audio, source=None, *, diarize=None, speakers=None):
         self.sources.append(source)
+        self.options.append((diarize, speakers))
         self.gate.wait(10)
         if "silent" in source:
             raise RuntimeError

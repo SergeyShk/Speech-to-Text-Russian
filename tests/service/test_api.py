@@ -78,7 +78,15 @@ class TestPage:
             "max_duration": None,
             "keep": 86400.0,
             "formats": ["txt", "json", "jsonl", "srt", "vtt", "ass", "csv"],
+            "diarize": False,
+            "speakers": None,
+            "max_speakers": 100,
         }
+
+    def test_info_speakers(self, client, transcriber):
+        transcriber.diarize, transcriber.speakers = True, 2
+        info = client.get("/v1/info").json()
+        assert (info["diarize"], info["speakers"]) == (True, 2)
 
     def test_openapi(self, client):
         paths = client.get("/openapi.json").json()["paths"]
@@ -168,6 +176,88 @@ class TestJobs:
 
     def test_missing_file_field(self, client):
         assert client.post("/v1/transcriptions", data={"name": "x"}).status_code == 422
+
+
+class TestSpeakers:
+    def test_default(self, client, transcriber):
+        job = upload(client).json()
+        assert (job["diarize"], job["speakers"]) == (False, None)
+
+    def test_number_of_speakers(self, client, jobs, transcriber):
+        job = upload(client, data={"speakers": "3"}).json()
+        assert (job["diarize"], job["speakers"]) == (True, 3)
+        wait(jobs, job["id"])
+        assert transcriber.options == [(True, 3)]
+        assert client.get(f"/v1/jobs/{job['id']}").json()["speakers"] == 3
+
+    def test_turned_on(self, client):
+        job = upload(client, data={"diarize": "true"}).json()
+        assert (job["diarize"], job["speakers"]) == (True, None)
+
+    def test_turned_off(self, client, transcriber):
+        transcriber.diarize, transcriber.speakers = True, 2
+        job = upload(client, data={"diarize": "false"}).json()
+        assert (job["diarize"], job["speakers"]) == (False, None)
+
+    def test_service_defaults(self, client, transcriber):
+        transcriber.diarize, transcriber.speakers = True, 2
+        job = upload(client).json()
+        assert (job["diarize"], job["speakers"]) == (True, 2)
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("speakers", "0", "Число говорящих должно быть от 1 до 100: 0"),
+            ("speakers", "-1", "Число говорящих должно быть от 1 до 100: -1"),
+            (
+                "speakers",
+                "1000000000000",
+                "Число говорящих должно быть от 1 до 100: 1000000000000",
+            ),
+            ("speakers", "два", "Неверное значение поля speakers"),
+            ("speakers", "1.5", "Неверное значение поля speakers"),
+            ("speakers", "1e21", "Неверное значение поля speakers"),
+            ("diarize", "может быть", "Неверное значение поля diarize"),
+        ],
+    )
+    def test_wrong_value(self, client, jobs, field, value, message):
+        response = upload(client, data={field: value})
+        assert response.status_code == 422
+        assert response.json() == {"detail": message}
+        assert job_folders(jobs) == []
+
+    @pytest.mark.parametrize("field", ["speakers", "diarize"])
+    def test_empty_field_means_service_value(self, client, transcriber, field):
+        transcriber.diarize, transcriber.speakers = True, 2
+        job = upload(client, data={field: ""}).json()
+        assert (job["diarize"], job["speakers"]) == (True, 2)
+
+    def test_no_file(self, client):
+        response = client.post("/v1/transcriptions", data={"speakers": "2"})
+        assert response.status_code == 422
+        assert response.json() == {"detail": "Нет поля file"}
+
+    def test_form_has_no_sample_values(self, client):
+        schema = client.get("/openapi.json").json()["components"]["schemas"]
+        form = next(item for name, item in schema.items() if name.startswith("Body_"))
+        for field in ("diarize", "speakers"):
+            assert form["properties"][field]["examples"] == [""]
+
+    def test_contradiction(self, client, jobs):
+        response = upload(client, data={"diarize": "false", "speakers": "2"})
+        assert response.status_code == 422
+        assert response.json() == {
+            "detail": "Число говорящих задано, а разделение говорящих выключено"
+        }
+        assert job_folders(jobs) == []
+
+    def test_documented(self, client):
+        post = client.get("/openapi.json").json()["paths"]["/v1/transcriptions"]["post"]
+        schema = post["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+        fields = client.get("/openapi.json").json()["components"]["schemas"][
+            schema.rsplit("/", 1)[1]
+        ]["properties"]
+        assert {"file", "diarize", "speakers"} == set(fields)
 
 
 class TestResult:

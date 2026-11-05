@@ -131,7 +131,7 @@ function showUploadErrors(errors) {
   box.hidden = errors.length === 0;
 }
 
-function uploadOne(file, errors) {
+function uploadOne(file, errors, options) {
   return new Promise((resolve) => {
     const fail = (message) => {
       errors.push(`${file.name}: ${message}`);
@@ -143,6 +143,8 @@ function uploadOne(file, errors) {
       return;
     }
     const form = new FormData();
+    form.append("diarize", options.diarize);
+    if (options.speakers) form.append("speakers", options.speakers);
     form.append("file", file);
     const xhr = new XMLHttpRequest();
     const bar = $("progress-bar");
@@ -177,11 +179,27 @@ function uploadOne(file, errors) {
   });
 }
 
+function speakerOptions() {
+  const diarize = $("diarize").checked;
+  const field = $("speakers");
+  const speakers = field.value.trim();
+  // При вводе вроде «2e» значение поля пусто, и задача тихо ушла бы с автоматическим числом
+  const wrong = field.validity.badInput || (speakers && !/^[1-9]\d*$/.test(speakers));
+  if (diarize && (wrong || field.validity.rangeOverflow)) return null;
+  return { diarize, speakers: diarize ? speakers : "" };
+}
+
 async function upload(files) {
   // Ошибки копятся по всем файлам: загрузка следующего не прячет сообщение о прошлом
   const errors = [];
   showUploadErrors(errors);
-  for (const file of files) await uploadOne(file, errors);
+  // Значения читаются один раз: поле можно менять, пока загружаются уже выбранные файлы
+  const options = speakerOptions();
+  if (!options) {
+    showUploadErrors([`Число говорящих должно быть целым, от 1 до ${state.info.max_speakers}`]);
+    return;
+  }
+  for (const file of files) await uploadOne(file, errors, options);
 }
 
 function renderList() {
@@ -295,6 +313,7 @@ async function renderJob() {
   const details = [megabytes(job.size)];
   if (job.duration !== null) details.push(length(job.duration));
   if (job.channels !== null) details.push(`каналов ${job.channels}`);
+  if (job.diarize) details.push(job.speakers ? `говорящих ${job.speakers}` : "разделение говорящих");
   details.push(`загружена ${new Date(job.created).toLocaleString("ru-RU")}`);
   $("details").textContent = details.join(" · ");
   const status = $("status");
@@ -470,6 +489,9 @@ function start() {
 async function init() {
   const input = $("file");
   input.multiple = true;
+  $("diarize").addEventListener("change", (event) => {
+    $("speakers-field").hidden = !event.currentTarget.checked;
+  });
   input.addEventListener("change", () => {
     upload([...input.files]);
     input.value = "";
@@ -526,9 +548,16 @@ async function init() {
     state.info = await (await fetch("/v1/info", { credentials: "same-origin" })).json();
   } catch {
     $("service").textContent = "Сервис недоступен";
+    $("upload").hidden = true;
     return;
   }
   $("service").textContent = `Модель ${state.info.model} · stt-ru ${state.info.version}`;
+  // Здесь, а не в start: повторный вход не сбрасывает то, что уже введено
+  $("diarize").checked = state.info.diarize;
+  $("speakers").value = state.info.speakers ?? "";
+  $("speakers").placeholder = state.info.speakers ?? "авто";
+  $("speakers").max = state.info.max_speakers;
+  $("speakers-field").hidden = !state.info.diarize;
   if (state.info.auth && !state.info.authorized) showToken();
   else start();
 }

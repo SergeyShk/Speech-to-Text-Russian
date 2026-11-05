@@ -1,5 +1,7 @@
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import ClassVar
 
@@ -12,7 +14,7 @@ import stt_ru
 from stt_ru import Segment, Transcriber, pipeline
 from stt_ru.audio import Audio
 from stt_ru.diarization import Turn
-from stt_ru.exceptions import ParameterError
+from stt_ru.exceptions import ModelError, ParameterError
 from stt_ru.pipeline import cut_points, same_signal
 from stt_ru.vad import VadOptions
 
@@ -379,7 +381,7 @@ class TestDiarization:
 
     @pytest.mark.parametrize("speakers", [0, -2])
     def test_wrong_speakers(self, diarizing, speakers):
-        with pytest.raises(ParameterError, match="Число говорящих"):
+        with pytest.raises(ParameterError, match="Число говорящих должно быть от 1 до 100"):
             Transcriber(speakers=speakers)
 
     def test_without_word_times(self, diarizing, monkeypatch):
@@ -419,6 +421,96 @@ class TestDiarization:
         Transcriber(diarize=True, split_channels=False).transcribe_audio(audio)
         assert len(diarizing[0].calls) == 1
 
+    def test_turned_on_for_one_record(self, diarizing):
+        transcriber = Transcriber()
+        assert diarizing == []
+        first = transcriber.transcribe_audio(mono(), diarize=True)
+        second = transcriber.transcribe_audio(mono(), speakers=2)
+        plain = transcriber.transcribe_audio(mono())
+        assert first.segments[0].speaker_id == 1
+        assert second.segments[0].speaker_id == 1
+        assert plain.segments[0].speaker_id is None
+        assert len(diarizing) == 1
+        assert [call[2] for call in diarizing[0].calls] == [None, 2]
+
+    def test_turned_off_for_one_record(self, diarizing):
+        transcriber = Transcriber(speakers=2)
+        assert transcriber.transcribe_audio(mono(), diarize=False).segments[0].speaker_id is None
+        assert diarizing[0].calls == []
+
+    def test_default_speakers_kept(self, diarizing):
+        Transcriber(speakers=2).transcribe_audio(mono(), diarize=True)
+        assert diarizing[0].calls[0][2] == 2
+
+    def test_file_options(self, diarizing, tmp_path):
+        path = tmp_path / "rec.wav"
+        sf.write(path, mono().samples, 8000)
+        segments = Transcriber().transcribe(path, speakers=3).segments
+        assert segments[0].speaker_id == 1
+        assert diarizing[0].calls[0][2] == 3
+
+    def test_loaded_once_from_threads(self, diarizing, monkeypatch):
+        class Slow(FakeDiarizer):
+            def __init__(self, **kwargs):
+                time.sleep(0.05)
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(pipeline, "Diarizer", Slow)
+        transcriber = Transcriber()
+        threads = [
+            threading.Thread(
+                target=transcriber.transcribe_audio, args=(mono(),), kwargs={"diarize": True}
+            )
+            for _ in range(8)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(diarizing) == 1
+        assert len(diarizing[0].calls) == 8
+
+    def test_failed_load_retried(self, diarizing, monkeypatch):
+        class FailsOnce(FakeDiarizer):
+            failed = False
+
+            def __init__(self, **kwargs):
+                if not FailsOnce.failed:
+                    FailsOnce.failed = True
+                    raise ModelError("нет сети")
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(pipeline, "Diarizer", FailsOnce)
+        transcriber = Transcriber()
+        with pytest.raises(ModelError, match="нет сети"):
+            transcriber.transcribe_audio(mono(), diarize=True)
+        assert transcriber.transcribe_audio(mono()).segments[0].speaker_id is None
+        assert transcriber.transcribe_audio(mono(), diarize=True).segments[0].speaker_id == 1
+
+    def test_file_not_read_with_wrong_options(self, diarizing, tmp_path):
+        with pytest.raises(ParameterError, match="Число говорящих"):
+            Transcriber().transcribe(tmp_path / "missing.wav", speakers=0)
+
+    @pytest.mark.parametrize(
+        ("options", "message"),
+        [
+            ({"speakers": 0}, "Число говорящих должно быть от 1 до 100: 0"),
+            ({"speakers": 101}, "Число говорящих должно быть от 1 до 100: 101"),
+            ({"diarize": False, "speakers": 2}, "разделение говорящих выключено"),
+        ],
+    )
+    def test_wrong_options(self, diarizing, options, message):
+        with pytest.raises(ParameterError, match=message):
+            Transcriber().transcribe_audio(mono(), **options)
+
+    def test_speaker_options(self, diarizing):
+        assert Transcriber().speaker_options() == (False, None)
+        assert Transcriber().speaker_options(diarize=True) == (True, None)
+        assert Transcriber(diarize=True).speaker_options() == (True, None)
+        assert Transcriber(speakers=4).speaker_options() == (True, 4)
+        assert Transcriber(speakers=4).speaker_options(speakers=2) == (True, 2)
+        assert Transcriber(speakers=4).speaker_options(diarize=False) == (False, None)
+
     def test_windows_keep_offset(self, diarizing, monkeypatch):
         monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)
         monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.1)
@@ -441,6 +533,8 @@ def test_real_diarization():
     assert operator.speaker == "Говорящий 1"
     assert client.speaker == "Говорящий 2"
     assert {s.speaker_id for s in segments} == {1, 2}
+    exact = transcriber.transcribe(CALL, speakers=2).segments
+    assert [s.speaker_id for s in exact] == [s.speaker_id for s in segments]
 
 
 @pytest.mark.network

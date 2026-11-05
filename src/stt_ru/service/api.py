@@ -14,18 +14,22 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
+    Form,
     HTTPException,
     Query,
     Request,
     Response,
     UploadFile,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .. import __version__
+from ..diarization import MAX_SPEAKERS
+from ..exceptions import ParameterError
 from ..export import FORMATS, dumps
 from .worker import Job, JobQueue, QueueFullError, Status
 
@@ -70,6 +74,8 @@ class JobInfo(BaseModel):
     duration: float | None = Field(None, description="Длительность записи, с")
     channels: int | None = Field(None, description="Число каналов файла")
     segments: int | None = Field(None, description="Число распознанных фрагментов")
+    diarize: bool = Field(description="Разделять говорящих")
+    speakers: int | None = Field(None, description="Точное число говорящих, если задано")
     error: str | None = Field(None, description="Текст ошибки")
 
 
@@ -84,6 +90,9 @@ class ServiceInfo(BaseModel):
     max_duration: float | None = Field(description="Наибольшая длительность записи, с")
     keep: float = Field(description="Сколько секунд задача хранится после окончания")
     formats: list[str] = Field(description="Форматы результата")
+    diarize: bool = Field(description="Разделять ли говорящих, если задача не указала")
+    speakers: int | None = Field(description="Число говорящих, если задача не указала")
+    max_speakers: int = Field(description="Наибольшее число говорящих в задаче")
 
 
 class Waveform(BaseModel):
@@ -98,6 +107,17 @@ class _Settings:
     jobs: JobQueue
     token: str | None
     max_size: int
+
+
+async def _invalid_request(request: Request, error: Exception) -> JSONResponse:
+    assert isinstance(error, RequestValidationError)
+    # Все ошибки сервиса - одна строка по-русски, а у FastAPI здесь список на английском
+    problem = error.errors()[0]
+    field = problem["loc"][-1]
+    text = (
+        f"Нет поля {field}" if problem["type"] == "missing" else f"Неверное значение поля {field}"
+    )
+    return JSONResponse({"detail": text}, status_code=422)
 
 
 def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 << 20) -> FastAPI:
@@ -138,6 +158,7 @@ def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 
         lifespan=lifespan,
     )
     app.state.settings = _Settings(jobs, token or None, max_size)
+    app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_middleware(_Guard, max_body=max_size + UPLOAD_OVERHEAD)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.include_router(router)
@@ -190,6 +211,8 @@ def _info(jobs: JobQueue, job: Job) -> JobInfo:
         duration=job.duration,
         channels=job.channels,
         segments=None if job.transcript is None else len(job.transcript.segments),
+        diarize=job.diarize,
+        speakers=job.speakers,
         error=job.error,
     )
 
@@ -211,6 +234,7 @@ def health() -> dict[str, str]:
 
 @router.get("/v1/info", summary="Сведения о сервисе")
 def service_info(request: Request, settings: Settings) -> ServiceInfo:
+    diarize, speakers = settings.jobs.transcriber.speaker_options()
     return ServiceInfo(
         version=__version__,
         model=settings.jobs.transcriber.recognizer.model,
@@ -220,6 +244,9 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
         max_duration=settings.jobs.max_duration,
         keep=settings.jobs.keep,
         formats=list(FORMATS),
+        diarize=diarize,
+        speakers=speakers,
+        max_speakers=MAX_SPEAKERS,
     )
 
 
@@ -230,14 +257,41 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
     dependencies=protected,
     responses={
         413: {"description": "Файл больше наибольшего размера"},
+        422: {"description": "Неверные параметры"},
         503: {"description": "Очередь заполнена"},
     },
 )
-def create_job(file: UploadFile, response: Response, settings: Settings) -> JobInfo:
+def create_job(
+    file: UploadFile,
+    response: Response,
+    settings: Settings,
+    # Пустой образец: иначе Swagger UI подставляет в форму значения из схемы
+    diarize: Annotated[
+        bool | None,
+        Form(
+            examples=[""],
+            description="Разделять говорящих в записи с одной дорожкой; пусто - как у сервиса",
+        ),
+    ] = None,
+    speakers: Annotated[
+        int | None,
+        Form(
+            examples=[""],
+            description=(
+                f"Точное число говорящих от 1 до {MAX_SPEAKERS}, включает разделение; "
+                "пусто - как у сервиса"
+            ),
+        ),
+    ] = None,
+) -> JobInfo:
     if file.size is not None and file.size > settings.max_size:
         raise HTTPException(413, _too_large(settings.max_size))
     try:
-        job = settings.jobs.submit(file.filename or "audio", file.file)
+        job = settings.jobs.submit(
+            file.filename or "audio", file.file, diarize=diarize, speakers=speakers
+        )
+    except ParameterError as error:
+        raise HTTPException(422, str(error)) from error
     except QueueFullError as error:
         raise HTTPException(503, str(error), {"Retry-After": "60"}) from error
     response.headers["Location"] = f"/v1/jobs/{job.id}"
@@ -254,7 +308,10 @@ def get_job(job_id: str, settings: Settings) -> JobInfo:
     summary="Результат распознавания",
     dependencies=protected,
     response_class=Response,
-    responses={409: {"description": "Задача не готова или закончилась ошибкой"}},
+    responses={
+        400: {"description": "Неизвестный формат"},
+        409: {"description": "Задача не готова или закончилась ошибкой"},
+    },
 )
 def get_result(
     job_id: str,

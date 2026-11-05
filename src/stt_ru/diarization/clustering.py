@@ -19,15 +19,16 @@ def cluster(
     Описание:
         Агломеративная кластеризация: каждый раз сливаются два кластера с ближайшими центрами,
         пока расстояние между ними не больше threshold. Кластеры с долей веса меньше MIN_SHARE
-        присоединяются к ближайшему большому. Если векторов больше MAX_VECTORS, кластеризуются
-        равномерно выбранные MAX_VECTORS, а остальные относятся к ближайшему центру.
-        Результат не зависит от случайности
+        присоединяются к ближайшему большому. С точным числом кластеров вместо этого остаются
+        speakers самых весомых, а если их меньше, разбиение продолжается до этого числа. Если
+        векторов больше MAX_VECTORS, кластеризуются равномерно выбранные MAX_VECTORS, а остальные
+        относятся к ближайшему центру. Результат не зависит от случайности
 
     Аргументы:
         vectors (numpy.ndarray): Нормированные векторы, форма (число векторов, размерность)
         threshold (float): Наибольшее евклидово расстояние между центрами сливаемых кластеров
-        speakers (int): Точное число кластеров: threshold и MIN_SHARE не применяются;
-            None - число определяется по threshold
+        speakers (int): Точное число кластеров, если векторов не меньше; None - число определяется
+            по threshold и MIN_SHARE
         weights (numpy.ndarray): Вес каждого вектора, например длительность речи; None - равные
 
     Вывод:
@@ -47,9 +48,11 @@ def cluster(
         return np.zeros(0, dtype=np.int64)
     weights = np.ones(count) if weights is None else np.asarray(weights, dtype=np.float64)
     picked = np.linspace(0, count - 1, min(count, MAX_VECTORS)).astype(np.int64)
-    labels = _agglomerate(vectors[picked].astype(np.float64), threshold, speakers)
-    if speakers is None:
-        labels = _absorb_small(vectors[picked], labels, weights[picked])
+    chosen = vectors[picked].astype(np.float64)
+    labels = _agglomerate(chosen, threshold)
+    if speakers is not None and len(np.unique(labels)) < speakers:
+        labels = _agglomerate(chosen, threshold, speakers)
+    labels = _absorb_small(vectors[picked], labels, weights[picked], speakers)
     if len(picked) < count:
         full = _closest(vectors, vectors[picked], labels)
         full[picked] = labels
@@ -57,7 +60,7 @@ def cluster(
     return np.unique(labels, return_inverse=True)[1]
 
 
-def _agglomerate(vectors: np.ndarray, threshold: float, speakers: int | None) -> np.ndarray:
+def _agglomerate(vectors: np.ndarray, threshold: float, speakers: int | None = None) -> np.ndarray:
     count = len(vectors)
     centers = vectors.copy()
     sizes = np.ones(count)
@@ -107,14 +110,19 @@ def _closest(vectors: np.ndarray, members: np.ndarray, labels: np.ndarray) -> np
     return closest
 
 
-def _absorb_small(vectors: np.ndarray, labels: np.ndarray, weights: np.ndarray) -> np.ndarray:
+def _absorb_small(
+    vectors: np.ndarray, labels: np.ndarray, weights: np.ndarray, speakers: int | None
+) -> np.ndarray:
     uniques, inverse = np.unique(labels, return_inverse=True)
-    shares = np.bincount(inverse, weights=weights) / max(weights.sum(), 1e-9)
-    kept = uniques[shares >= MIN_SHARE]
+    totals = np.bincount(inverse, weights=weights)
+    if speakers is None:
+        kept = uniques[totals >= MIN_SHARE * totals.sum()]
+        if len(kept) == 0:
+            kept = uniques[[totals.argmax()]]
+    else:
+        kept = uniques[np.argsort(-totals, kind="stable")[:speakers]]
     if len(kept) == len(uniques):
         return labels
-    if len(kept) == 0:
-        kept = uniques[[shares.argmax()]]
     large = np.isin(labels, kept)
     result = labels.copy()
     result[~large] = _closest(vectors[~large], vectors[large], labels[large])

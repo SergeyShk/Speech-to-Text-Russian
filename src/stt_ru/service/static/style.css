@@ -116,6 +116,19 @@ input[type="password"] {
 .button.danger { color: var(--danger); }
 .button.danger:hover { border-color: var(--danger); }
 
+.options { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.count { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.count input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
 .drop {
   display: flex;
   flex-direction: column;

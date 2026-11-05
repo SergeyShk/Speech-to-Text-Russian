@@ -53,7 +53,7 @@ stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e
 
 ## Разделение говорящих { #diarization }
 
-С [`--diarize`](transcribe.md#diarization) работают еще две модели. При первом запуске они скачиваются в кэш Hugging Face (вместе около 35 МБ), `--model-dir` к ним не относится.
+При [разделении говорящих](transcribe.md#diarization) работают еще две модели. При первом использовании они скачиваются в кэш Hugging Face (вместе около 35 МБ), `--model-dir` к ним не относится.
 
 | Модель | Что делает | Лицензия |
 | :----- | :--------- | :------- |
