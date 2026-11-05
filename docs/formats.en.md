@@ -39,6 +39,7 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
       "start": 0.994,
       "end": 9.054,
       "channel": 1,
+      "speaker_id": null,
       "speaker": "Канал 1",
       "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."
     },
@@ -46,6 +47,7 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
       "start": 3.49,
       "end": 3.934,
       "channel": 0,
+      "speaker_id": null,
       "speaker": "Канал 0",
       "text": "Угу"
     }
@@ -53,13 +55,15 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
 }
 ```
 
+`speaker_id` is the speaker number with [speaker separation](transcribe.md#diarization), and `speaker` is then «Говорящий N»; otherwise `null`.
+
 ## JSON Lines { #jsonl }
 
 One segment per line with the file name in `source`: the results of several files can be collected into one file (this is how `--summary out/all.jsonl` works).
 
 ``` json
-{"source": "call.wav", "start": 0.994, "end": 9.054, "channel": 1, "speaker": "Канал 1", "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."}
-{"source": "call.wav", "start": 3.49, "end": 3.934, "channel": 0, "speaker": "Канал 0", "text": "Угу"}
+{"source": "call.wav", "start": 0.994, "end": 9.054, "channel": 1, "speaker_id": null, "speaker": "Канал 1", "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."}
+{"source": "call.wav", "start": 3.49, "end": 3.934, "channel": 0, "speaker_id": null, "speaker": "Канал 0", "text": "Угу"}
 ```
 
 ## SRT { #srt }

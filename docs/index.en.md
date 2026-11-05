@@ -7,6 +7,7 @@
 ## Features
 
 *   transcribe [files and folders](transcribe.md) from the command line: text to the console or the results of every file to a folder, one summary file for a whole batch, monitoring a folder for new recordings
+*   [separate speakers](transcribe.md#diarization) in a single-track recording
 *   save the result in the [formats](formats.md) TXT, JSON, JSONL, SRT, VTT, ASS and CSV
 *   transcribe recordings from files and from memory in a [Python program](python.md)
 *   choose the onnx-asr [model](models.md), the device and the speech detection parameters
@@ -55,7 +56,8 @@ On the first run the model (about 230 MB) is downloaded from Hugging Face. More 
 1.  The file is read entirely: WAV, FLAC, OGG, MP3 and other uncompressed formats by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.
 2.  The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Channels that differ only in loudness and a small delay are recognized once.
 3.  [Silero VAD](models.md#vad) speech detection cuts the recording into speech segments of at most 20 s, and the model recognizes each segment.
-4.  The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.
+4.  With `--diarize`, a single-track recording is split into speaker turns and segments are labeled «Говорящий N».
+5.  The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.
 
 !!! note "Version 0.2"
     The previous Kaldi version is no longer developed. Its code remains in the [repository history](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/8db5f77d967216fe36194eca067f6b879301b765).

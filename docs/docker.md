@@ -9,7 +9,7 @@
 | `ghcr.io/sergeyshk/stt-ru:<версия>`, `:latest` | linux/amd64, linux/arm64 | CPU |
 | `ghcr.io/sergeyshk/stt-ru:<версия>-gpu`, `:latest-gpu` | linux/amd64 | NVIDIA GPU |
 
-В образе - stt-ru со всеми дополнениями (сервис, оценка качества, ffmpeg) и модель по умолчанию: контейнер распознает без сети. Команда по умолчанию - `stt-ru serve --host 0.0.0.0`, вместо нее можно передать любую команду `stt-ru`. Рабочий каталог - `/data`, пользователь - `stt` с uid 1000.
+В образе - stt-ru со всеми дополнениями (сервис, оценка качества, ffmpeg), модель по умолчанию и [модели разделения говорящих](models.md#diarization): контейнер распознает без сети. Команда по умолчанию - `stt-ru serve --host 0.0.0.0`, вместо нее можно передать любую команду `stt-ru`. Рабочий каталог - `/data`, пользователь - `stt` с uid 1000.
 
 ## Веб-сервис
 
@@ -31,6 +31,7 @@ docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token ghcr.io/sergeyshk/stt
 
 ``` bash
 docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe call.wav
+docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe meeting.mp3 --diarize
 docker run --rm -v "$PWD:/data" --user "$(id -u):$(id -g)" ghcr.io/sergeyshk/stt-ru transcribe calls/ -o out/ -f srt,csv
 docker run -d -v /archive:/data --user "$(id -u):$(id -g)" ghcr.io/sergeyshk/stt-ru transcribe wav -r -o out --watch --delete-source
 ```

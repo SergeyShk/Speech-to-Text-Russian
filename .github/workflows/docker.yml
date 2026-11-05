@@ -49,6 +49,7 @@ jobs:
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -q | tee out.txt
           grep -F "Канал 1: Наталья, благодарю вас за ожидание." out.txt
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -f json -q | jq -e '.segments | length == 5'
+          docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav --mono --diarize -f json -q | jq -e '[.segments[].speaker_id] | unique == [1, 2]'
           mkdir eval && cp tests/data/call.wav eval/
           printf 'audio,text,channel\ncall.wav,Угу. Угу. До свидания.,0\n' > eval/eval.csv
           docker run --rm --network none -v "$PWD/eval:/data:ro" stt-ru:test evaluate eval.csv -q | tee eval.txt

@@ -16,6 +16,8 @@
 | `vad` | VadOptions | `None` | Параметры [поиска речи](models.md#vad) |
 | `split_channels` | bool | `True` | Распознавать каналы отдельно; `False` - сводить в один |
 | `ffmpeg` | str | `None` | Путь к ffmpeg; `None` - поиск в `PATH` и в `imageio-ffmpeg` |
+| `diarize` | bool | `False` | [Разделять говорящих](transcribe.md#diarization) в записи с одной дорожкой |
+| `speakers` | int | `None` | Точное число говорящих, включает `diarize`; `None` - определяется по записи |
 
 | Метод | Описание |
 | :---- | :------- |
@@ -53,7 +55,21 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 
 `save(path, fmt=None)` сохраняет результат в [формате](formats.md) по расширению файла или из `fmt`.
 
-`Segment` - фрагмент речи: `start` и `end` в секундах, `text`, `channel` (номер канала с нуля; `None` - каналы сведены), `speaker` («Канал N» или `None`) и `duration`.
+`Segment` - фрагмент речи: `start` и `end` в секундах, `text`, `channel` (номер канала с нуля; `None` - каналы сведены), `speaker_id` (номер говорящего при диаризации, с единицы), `speaker` («Говорящий N», «Канал N» или `None`) и `duration`.
+
+## Разделение говорящих { #diarization }
+
+!!! info ""
+    **stt_ru.diarization.Diarizer**, **stt_ru.diarization.Turn**
+
+`Diarizer` находит реплики без распознавания. Обычно он не нужен отдельно: `Transcriber(diarize=True)` подписывает фрагменты сам.
+
+| Параметр | Тип | По умолчанию | Описание |
+| :------- | :-- | :----------- | :------- |
+| `threshold` | float | `0.7` | Порог сведения голосов: чем больше, тем меньше говорящих |
+| `providers` | list[str] | `None` | Провайдеры ONNX Runtime; `None` - как у `Transcriber` |
+
+`diarize(samples, sample_rate, speakers=None)` принимает одномерный массив отсчетов и возвращает список `Turn` по времени начала: `start` и `end` в секундах, `speaker` - номер с единицы. Реплики разных людей могут перекрываться.
 
 ## Экспорт { #export }
 

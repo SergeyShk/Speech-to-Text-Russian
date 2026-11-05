@@ -9,7 +9,7 @@ Images are published to the GitHub Container Registry with every release:
 | `ghcr.io/sergeyshk/stt-ru:<version>`, `:latest` | linux/amd64, linux/arm64 | CPU |
 | `ghcr.io/sergeyshk/stt-ru:<version>-gpu`, `:latest-gpu` | linux/amd64 | NVIDIA GPU |
 
-The image contains stt-ru with all extras (the service, quality evaluation, ffmpeg) and the default model: the container recognizes speech without network. The default command is `stt-ru serve --host 0.0.0.0`; any `stt-ru` command can be passed instead. The working folder is `/data`, and the user is `stt` with uid 1000.
+The image contains stt-ru with all extras (the service, quality evaluation, ffmpeg), the default model and the [speaker separation models](models.md#diarization): the container recognizes speech without network. The default command is `stt-ru serve --host 0.0.0.0`; any `stt-ru` command can be passed instead. The working folder is `/data`, and the user is `stt` with uid 1000.
 
 ## Web service
 
@@ -31,6 +31,7 @@ The folder with recordings is mounted to `/data`:
 
 ``` bash
 docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe call.wav
+docker run --rm -v "$PWD:/data" ghcr.io/sergeyshk/stt-ru transcribe meeting.mp3 --diarize
 docker run --rm -v "$PWD:/data" --user "$(id -u):$(id -g)" ghcr.io/sergeyshk/stt-ru transcribe calls/ -o out/ -f srt,csv
 docker run -d -v /archive:/data --user "$(id -u):$(id -g)" ghcr.io/sergeyshk/stt-ru transcribe wav -r -o out --watch --delete-source
 ```

@@ -29,6 +29,7 @@
 **stt-ru** распознает русскую речь в записях разговоров, лекций и диктовки. Речь распознает модель [GigaAM-v3](https://github.com/salute-developers/GigaAM) через [onnx-asr](https://github.com/istupakov/onnx-asr): текст получается с пунктуацией и числами, каналы стереозаписи распознаются как отдельные говорящие, результат сохраняется в субтитры и таблицы. Модель работает на CPU без PyTorch, на GPU NVIDIA - через ONNX Runtime.
 
 * **[Команда transcribe](https://sergeyshk.github.io/Speech-to-Text-Russian/transcribe/)** - файлы и каталоги, результаты каждого файла и общий файл на пакет, мониторинг папки с новыми записями
+* **[Разделение говорящих](https://sergeyshk.github.io/Speech-to-Text-Russian/transcribe/#diarization)** - реплики разных людей в записи с одной дорожкой
 * **[Форматы результата](https://sergeyshk.github.io/Speech-to-Text-Russian/formats/)** - TXT, JSON, JSONL, SRT, VTT, ASS для Aegisub и CSV для таблиц
 * **[Библиотека Python](https://sergeyshk.github.io/Speech-to-Text-Russian/python/)** - распознавание файлов и записей в памяти, экспорт результата
 * **[Модели](https://sergeyshk.github.io/Speech-to-Text-Russian/models/)** - любая модель onnx-asr: GigaAM, T-one, Vosk, Whisper и другие; устройства и параметры поиска речи
@@ -138,6 +139,7 @@ uv run pre-commit install
     *   **audio** - чтение аудио через soundfile и ffmpeg
     *   **asr** - распознавание моделью onnx-asr
     *   **vad** - параметры поиска речи Silero VAD
+    *   **diarization** - разделение говорящих
     *   **export** - форматы результата
     *   **evaluation** - оценка качества на разметке
     *   **service** - веб-интерфейс, REST API и очередь задач

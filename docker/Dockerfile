@@ -27,9 +27,9 @@ RUN useradd --uid 1000 --create-home stt \
     && chown stt:stt /opt/huggingface /data
 COPY --from=build /opt/venv /opt/venv
 USER stt
-# Модель по умолчанию загружается при сборке: контейнер распознает без сети
+# Модели загружаются при сборке: контейнер распознает и разделяет говорящих без сети
 RUN if [ -n "$MODEL" ]; then \
-        python -c "import sys; from stt_ru import Transcriber; Transcriber(sys.argv[1], providers=['CPUExecutionProvider'])" "$MODEL"; \
+        python -c "import sys; from stt_ru import Transcriber; Transcriber(sys.argv[1], providers=['CPUExecutionProvider'], diarize=True)" "$MODEL"; \
     fi
 WORKDIR /data
 EXPOSE 8000

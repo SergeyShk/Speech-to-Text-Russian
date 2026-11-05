@@ -16,6 +16,8 @@
 | `vad` | VadOptions | `None` | [Speech detection](models.md#vad) parameters |
 | `split_channels` | bool | `True` | Recognize channels separately; `False` - mix them into one |
 | `ffmpeg` | str | `None` | Path to ffmpeg; `None` - search in `PATH` and `imageio-ffmpeg` |
+| `diarize` | bool | `False` | [Separate speakers](transcribe.md#diarization) in a single-track recording |
+| `speakers` | int | `None` | Exact number of speakers, turns on `diarize`; `None` - detected from the recording |
 
 | Method | Description |
 | :----- | :---------- |
@@ -53,7 +55,21 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 
 `save(path, fmt=None)` saves the result in the [format](formats.md) given by the file extension or `fmt`.
 
-`Segment` is a speech segment: `start` and `end` in seconds, `text`, `channel` (channel number from zero; `None` - channels are mixed), `speaker` ("Канал N" or `None`) and `duration`.
+`Segment` is a speech segment: `start` and `end` in seconds, `text`, `channel` (channel number from zero; `None` - channels are mixed), `speaker_id` (speaker number with diarization, from one), `speaker` («Говорящий N», «Канал N» or `None`) and `duration`.
+
+## Speaker separation { #diarization }
+
+!!! info ""
+    **stt_ru.diarization.Diarizer**, **stt_ru.diarization.Turn**
+
+`Diarizer` finds speaker turns without recognition. It is rarely needed on its own: `Transcriber(diarize=True)` labels segments by itself.
+
+| Parameter | Type | Default | Description |
+| :-------- | :--- | :------ | :---------- |
+| `threshold` | float | `0.7` | Voice merging threshold: the higher it is, the fewer speakers |
+| `providers` | list[str] | `None` | ONNX Runtime providers; `None` - the same as for `Transcriber` |
+
+`diarize(samples, sample_rate, speakers=None)` takes a one-dimensional sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap.
 
 ## Export { #export }
 

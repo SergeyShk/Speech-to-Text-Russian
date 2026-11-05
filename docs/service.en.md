@@ -36,6 +36,8 @@ Jobs are visible in the browser they were uploaded from: their list is kept in t
 | `--max-queue` | `100` | How many files can wait in the queue |
 | `--keep` | `24` | How many hours to keep a file and its result after transcription |
 | `--data-dir` | the system temporary folder | Folder for uploaded and temporary files |
+| `--diarize` | off | [Separate speakers](transcribe.md#diarization) in single-track recordings |
+| `--speakers` | - | Exact number of speakers in every recording, turns on `--diarize` |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 The model and speech detection parameters are on the [Models](models.md#options) page. The address and parameters are checked before the model is loaded: a busy port gives a message and exit code 1.

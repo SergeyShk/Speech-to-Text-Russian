@@ -29,6 +29,7 @@
 **stt-ru** recognizes Russian speech in recordings of conversations, lectures and dictation. Speech is recognized by the [GigaAM-v3](https://github.com/salute-developers/GigaAM) model through [onnx-asr](https://github.com/istupakov/onnx-asr): the text comes with punctuation and digits, the channels of a stereo recording are recognized as separate speakers, and the result is saved as subtitles and tables. The model runs on a CPU without PyTorch and on NVIDIA GPUs through ONNX Runtime.
 
 * **[The transcribe command](https://sergeyshk.github.io/Speech-to-Text-Russian/en/transcribe/)** - files and folders, results of every file and one summary file per batch, monitoring a folder for new recordings
+* **[Speaker separation](https://sergeyshk.github.io/Speech-to-Text-Russian/en/transcribe/#diarization)** - turns of different people in a single-track recording
 * **[Output formats](https://sergeyshk.github.io/Speech-to-Text-Russian/en/formats/)** - TXT, JSON, JSONL, SRT, VTT, ASS for Aegisub and CSV for spreadsheets
 * **[Python library](https://sergeyshk.github.io/Speech-to-Text-Russian/en/python/)** - transcription of files and in-memory recordings, exporting the result
 * **[Models](https://sergeyshk.github.io/Speech-to-Text-Russian/en/models/)** - any onnx-asr model: GigaAM, T-one, Vosk, Whisper and others; devices and speech detection parameters
@@ -140,6 +141,7 @@ Bug reports, ideas and pull requests are welcome, in Russian or English - [issue
     *   **audio** - reading audio through soundfile and ffmpeg
     *   **asr** - recognition with an onnx-asr model
     *   **vad** - Silero VAD speech detection parameters
+    *   **diarization** - speaker separation
     *   **export** - output formats
     *   **evaluation** - quality evaluation on references
     *   **service** - web interface, REST API and job queue
