@@ -504,6 +504,8 @@ def test_real_diarization():
     assert operator.speaker == "Говорящий 1"
     assert client.speaker == "Говорящий 2"
     assert {s.speaker_id for s in segments} == {1, 2}
+    exact = transcriber.transcribe(CALL, speakers=2).segments
+    assert [s.speaker_id for s in exact] == [s.speaker_id for s in segments]
 
 
 @pytest.mark.network

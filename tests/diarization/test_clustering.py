@@ -48,6 +48,28 @@ def test_small_cluster_absorbed_by_share():
     assert len(set(labels.tolist())) == 2
 
 
+def test_outlier_does_not_take_place_of_speaker():
+    # Если просто остановиться на двух кластерах, второй - это выброс, а люди сливаются
+    vectors = np.concatenate([groups(10, 10), [[-0.8, -0.6]]])
+    labels = cluster(vectors, speakers=2)
+    assert labels[:10].tolist() == [0] * 10
+    assert labels[10:20].tolist() == [1] * 10
+    assert labels[20] in (0, 1)
+
+
+def test_rare_speaker_found_with_exact_speakers():
+    vectors = np.concatenate([groups(40), around(2.0, 1)])
+    weights = np.array([100.0] * 40 + [1.0])
+    assert len(set(cluster(vectors, weights=weights).tolist())) == 1
+    assert cluster(vectors, speakers=2, weights=weights).tolist() == [0] * 40 + [1]
+
+
+def test_fewer_speakers_keep_largest():
+    labels = cluster(groups(9, 2, 5), speakers=2)
+    assert labels[:9].tolist() == [0] * 9
+    assert labels[11:].tolist() == [1] * 5
+
+
 def test_small_cluster_kept_with_exact_speakers():
     vectors = np.array([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
     labels = cluster(vectors, speakers=2, weights=np.array([500.0, 500.0, 1.0]))
@@ -63,6 +85,7 @@ def test_many_vectors(monkeypatch):
     monkeypatch.setattr(clustering, "MAX_VECTORS", 10)
     labels = cluster(groups(30, 30))
     assert labels.tolist() == [0] * 30 + [1] * 30
+    assert cluster(groups(30, 30), speakers=2).tolist() == [0] * 30 + [1] * 30
 
 
 def test_stable():
