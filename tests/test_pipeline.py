@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import ClassVar
 
@@ -13,7 +14,7 @@ import stt_ru
 from stt_ru import Segment, Transcriber, pipeline
 from stt_ru.audio import Audio
 from stt_ru.diarization import Turn
-from stt_ru.exceptions import ParameterError
+from stt_ru.exceptions import ModelError, ParameterError
 from stt_ru.pipeline import cut_points, same_signal
 from stt_ru.vad import VadOptions
 
@@ -380,7 +381,7 @@ class TestDiarization:
 
     @pytest.mark.parametrize("speakers", [0, -2])
     def test_wrong_speakers(self, diarizing, speakers):
-        with pytest.raises(ParameterError, match="Число говорящих"):
+        with pytest.raises(ParameterError, match="Число говорящих должно быть от 1 до 100"):
             Transcriber(speakers=speakers)
 
     def test_without_word_times(self, diarizing, monkeypatch):
@@ -448,7 +449,13 @@ class TestDiarization:
         assert segments[0].speaker_id == 1
         assert diarizing[0].calls[0][2] == 3
 
-    def test_loaded_once_from_threads(self, diarizing):
+    def test_loaded_once_from_threads(self, diarizing, monkeypatch):
+        class Slow(FakeDiarizer):
+            def __init__(self, **kwargs):
+                time.sleep(0.05)
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(pipeline, "Diarizer", Slow)
         transcriber = Transcriber()
         threads = [
             threading.Thread(
@@ -463,10 +470,32 @@ class TestDiarization:
         assert len(diarizing) == 1
         assert len(diarizing[0].calls) == 8
 
+    def test_failed_load_retried(self, diarizing, monkeypatch):
+        class FailsOnce(FakeDiarizer):
+            failed = False
+
+            def __init__(self, **kwargs):
+                if not FailsOnce.failed:
+                    FailsOnce.failed = True
+                    raise ModelError("нет сети")
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(pipeline, "Diarizer", FailsOnce)
+        transcriber = Transcriber()
+        with pytest.raises(ModelError, match="нет сети"):
+            transcriber.transcribe_audio(mono(), diarize=True)
+        assert transcriber.transcribe_audio(mono()).segments[0].speaker_id is None
+        assert transcriber.transcribe_audio(mono(), diarize=True).segments[0].speaker_id == 1
+
+    def test_file_not_read_with_wrong_options(self, diarizing, tmp_path):
+        with pytest.raises(ParameterError, match="Число говорящих"):
+            Transcriber().transcribe(tmp_path / "missing.wav", speakers=0)
+
     @pytest.mark.parametrize(
         ("options", "message"),
         [
-            ({"speakers": 0}, "Число говорящих должно быть положительным"),
+            ({"speakers": 0}, "Число говорящих должно быть от 1 до 100: 0"),
+            ({"speakers": 101}, "Число говорящих должно быть от 1 до 100: 101"),
             ({"diarize": False, "speakers": 2}, "разделение говорящих выключено"),
         ],
     )

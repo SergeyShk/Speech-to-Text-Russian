@@ -34,6 +34,7 @@ from .batch import (
     watch,
     write_atomic,
 )
+from .diarization import MAX_SPEAKERS, check_speakers
 from .evaluation import (
     ModelReport,
     evaluate as evaluate_model,
@@ -296,7 +297,7 @@ def build_parser() -> ArgumentParser:
         "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
     )
     _add_model_options(serve_parser, several=False)
-    _add_speaker_options(serve_parser)
+    _add_speaker_options(serve_parser, per_job=True)
     return parser
 
 
@@ -348,16 +349,22 @@ def _add_model_options(command: ArgumentParser, several: bool) -> None:
     vad.add_argument("--speech-pad-ms", type=float, metavar="МС", help="запас по краям")
 
 
-def _add_speaker_options(command: ArgumentParser) -> None:
+def _add_speaker_options(command: ArgumentParser, *, per_job: bool = False) -> None:
     speakers = command.add_argument_group("говорящие")
+    note = ", если задача не указала иное" if per_job else ""
     speakers.add_argument(
-        "--diarize", action="store_true", help="разделять говорящих в записи с одной дорожкой"
+        "--diarize",
+        action="store_true",
+        help=f"разделять говорящих в записи с одной дорожкой{note}",
     )
     speakers.add_argument(
         "--speakers",
         type=int,
         metavar="N",
-        help="точное число говорящих в каждой записи, включает --diarize",
+        help=(
+            "точное число говорящих" + (note or " в каждой записи") + f", от 1 до {MAX_SPEAKERS}; "
+            "включает --diarize"
+        ),
     )
 
 
@@ -431,11 +438,6 @@ def _vad_options(args: argparse.Namespace) -> VadOptions:
     return VadOptions(**{name: value for name, value in options.items() if value is not None})
 
 
-def _check_speakers(parser: ArgumentParser, args: argparse.Namespace) -> None:
-    if args.speakers is not None and args.speakers < 1:
-        parser.error(f"--speakers должно быть положительным числом: {args.speakers}")
-
-
 def _quantization(args: argparse.Namespace) -> str | None:
     return None if args.quantization == "none" else args.quantization
 
@@ -467,7 +469,7 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
         check_options(formats, args.summary, args.workers, args.output_dir)
         if args.watch:
             check_watch(args.interval, args.min_age)
-        _check_speakers(parser, args)
+        check_speakers(args.speakers)
         vad = _vad_options(args)
         if args.output_dir is None:
             _check_printing(parser, args, formats)
@@ -696,7 +698,7 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
     warn = _tolerant(log_to_stderr)
     log = ignore if args.quiet else warn
     try:
-        _check_speakers(parser, args)
+        check_speakers(args.speakers)
         vad = _vad_options(args)
         if not 0 < args.port < 65536:
             parser.error(f"порт должен быть от 1 до 65535: {args.port}")

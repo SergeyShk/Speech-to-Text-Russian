@@ -92,9 +92,9 @@ def test_exact_speakers(embedder):
     assert {turn.speaker for turn in found} == {1}
 
 
-@pytest.mark.parametrize("speakers", [0, -1])
+@pytest.mark.parametrize("speakers", [0, -1, 101])
 def test_wrong_speakers(embedder, speakers):
-    with pytest.raises(ParameterError, match="Число говорящих"):
+    with pytest.raises(ParameterError, match="Число говорящих должно быть от 1 до 100"):
         Diarizer().diarize(signal((0.5, 1)), RATE, speakers=speakers)
 
 

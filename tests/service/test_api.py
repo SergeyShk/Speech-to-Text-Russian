@@ -203,10 +203,44 @@ class TestSpeakers:
         job = upload(client).json()
         assert (job["diarize"], job["speakers"]) == (True, 2)
 
-    @pytest.mark.parametrize("speakers", ["0", "-1", "два", "1.5"])
-    def test_wrong_number(self, client, jobs, speakers):
-        assert upload(client, data={"speakers": speakers}).status_code == 422
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("speakers", "0", "Число говорящих должно быть от 1 до 100: 0"),
+            ("speakers", "-1", "Число говорящих должно быть от 1 до 100: -1"),
+            (
+                "speakers",
+                "1000000000000",
+                "Число говорящих должно быть от 1 до 100: 1000000000000",
+            ),
+            ("speakers", "два", "Неверное значение поля speakers"),
+            ("speakers", "1.5", "Неверное значение поля speakers"),
+            ("speakers", "1e21", "Неверное значение поля speakers"),
+            ("diarize", "может быть", "Неверное значение поля diarize"),
+        ],
+    )
+    def test_wrong_value(self, client, jobs, field, value, message):
+        response = upload(client, data={field: value})
+        assert response.status_code == 422
+        assert response.json() == {"detail": message}
         assert job_folders(jobs) == []
+
+    @pytest.mark.parametrize("field", ["speakers", "diarize"])
+    def test_empty_field_means_service_value(self, client, transcriber, field):
+        transcriber.diarize, transcriber.speakers = True, 2
+        job = upload(client, data={field: ""}).json()
+        assert (job["diarize"], job["speakers"]) == (True, 2)
+
+    def test_no_file(self, client):
+        response = client.post("/v1/transcriptions", data={"speakers": "2"})
+        assert response.status_code == 422
+        assert response.json() == {"detail": "Нет поля file"}
+
+    def test_form_has_no_sample_values(self, client):
+        schema = client.get("/openapi.json").json()["components"]["schemas"]
+        form = next(item for name, item in schema.items() if name.startswith("Body_"))
+        for field in ("diarize", "speakers"):
+            assert form["properties"][field]["examples"] == [""]
 
     def test_contradiction(self, client, jobs):
         response = upload(client, data={"diarize": "false", "speakers": "2"})

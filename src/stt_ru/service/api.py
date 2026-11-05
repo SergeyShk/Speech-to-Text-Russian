@@ -21,12 +21,14 @@ from fastapi import (
     Response,
     UploadFile,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .. import __version__
+from ..diarization import MAX_SPEAKERS
 from ..exceptions import ParameterError
 from ..export import FORMATS, dumps
 from .worker import Job, JobQueue, QueueFullError, Status
@@ -106,6 +108,17 @@ class _Settings:
     max_size: int
 
 
+async def _invalid_request(request: Request, error: Exception) -> JSONResponse:
+    assert isinstance(error, RequestValidationError)
+    # Все ошибки сервиса - одна строка по-русски, а у FastAPI здесь список на английском
+    problem = error.errors()[0]
+    field = problem["loc"][-1]
+    text = (
+        f"Нет поля {field}" if problem["type"] == "missing" else f"Неверное значение поля {field}"
+    )
+    return JSONResponse({"detail": text}, status_code=422)
+
+
 def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 << 20) -> FastAPI:
     """
     Веб-приложение сервиса: страница и REST API
@@ -144,6 +157,7 @@ def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 
         lifespan=lifespan,
     )
     app.state.settings = _Settings(jobs, token or None, max_size)
+    app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_middleware(_Guard, max_body=max_size + UPLOAD_OVERHEAD)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.include_router(router)
@@ -249,13 +263,23 @@ def create_job(
     file: UploadFile,
     response: Response,
     settings: Settings,
+    # Пустой образец: иначе Swagger UI подставляет в форму значения из схемы
     diarize: Annotated[
         bool | None,
-        Form(description="Разделять говорящих в записи с одной дорожкой; нет - как у сервиса"),
+        Form(
+            examples=[""],
+            description="Разделять говорящих в записи с одной дорожкой; пусто - как у сервиса",
+        ),
     ] = None,
     speakers: Annotated[
         int | None,
-        Form(ge=1, description="Точное число говорящих, включает разделение; нет - как у сервиса"),
+        Form(
+            examples=[""],
+            description=(
+                f"Точное число говорящих от 1 до {MAX_SPEAKERS}, включает разделение; "
+                "пусто - как у сервиса"
+            ),
+        ),
     ] = None,
 ) -> JobInfo:
     if file.size is not None and file.size > settings.max_size:

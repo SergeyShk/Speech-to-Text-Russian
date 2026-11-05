@@ -38,7 +38,9 @@ Jobs are visible in the browser they were uploaded from: their list is kept in t
 | `--keep` | `24` | How many hours to keep a file and its result after transcription |
 | `--data-dir` | the system temporary folder | Folder for uploaded and temporary files |
 | `--diarize` | off | [Separate speakers](transcribe.md#diarization) unless a job says otherwise; the models are loaded at startup |
-| `--speakers` | - | Exact number of speakers unless a job says otherwise; turns on `--diarize` |
+| `--speakers` | - | Exact number of speakers from 1 to 100 unless a job says otherwise; turns on `--diarize` |
+
+Without `--diarize`, speaker separation is available too: the first such job loads the [models](models.md#diarization), downloading them if needed, and fails without network and cache.
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 The model and speech detection parameters are on the [Models](models.md#options) page. The address and parameters are checked before the model is loaded: a busy port gives a message and exit code 1.
@@ -64,7 +66,7 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 
 | Method and path | What it does |
 | :-------------- | :----------- |
-| `POST /v1/transcriptions` | Queues a file (multipart, field `file`): response 202 with the job and a `Location` header. Optional fields: `speakers` - exact number of speakers, `diarize` - `true` or `false`, whether to separate them; without them - as set at service startup |
+| `POST /v1/transcriptions` | Queues a file (multipart, field `file`): response 202 with the job and a `Location` header. Optional fields: `speakers` - exact number of speakers from 1 to 100, `diarize` - `true` or `false`, whether to separate them; without them - as set at service startup |
 | `GET /v1/jobs/{id}` | Job state |
 | `GET /v1/jobs/{id}/result?format=srt` | Result in a format (`json` by default) with the file name in `Content-Disposition` |
 | `GET /v1/jobs/{id}/waveform` | Waveform peaks per channel |
