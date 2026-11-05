@@ -1172,7 +1172,7 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span clas
 <tr>
 <td style="text-align: left;"><code>--speakers</code></td>
 <td style="text-align: left;">-</td>
-<td style="text-align: left;">Точное число говорящих в каждой записи, включает <code>--diarize</code></td>
+<td style="text-align: left;">Точное число говорящих в каждой записи, от 1 до 100; включает <code>--diarize</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>-q</code>, <code>--quiet</code></td>
@@ -1188,7 +1188,7 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span clas
 stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span class="w"> </span>--mono<span class="w"> </span>--speakers<span class="w"> </span><span class="m">2</span><span class="w">    </span><span class="c1"># каналы сведены, говорящих точно двое</span>
 </code></pre></div>
 <ul>
-<li>Если число говорящих известно, его лучше указать в <code>--speakers</code>: так не появятся лишние и не сольются похожие голоса.</li>
+<li>Если число говорящих известно, его лучше указать в <code>--speakers</code>: так находится и человек, который говорит совсем мало, около 1-2 % времени. Число меньше настоящего сливает людей. На одного-двух больше почти не вредит, но появляются лишние говорящие с несколькими фрагментами; сильно завышенное число дробит людей. Говорящих может оказаться и меньше указанного: голос, который нигде не перевесил другие, в результат не попадает.</li>
 <li>Разные каналы стереозаписи и так разделяют говорящих: для них <code>--diarize</code> только выводит предупреждение. Чтобы разделить говорящих в сведенной записи, нужен <code>--mono</code>.</li>
 <li>Модели без времени слов (Whisper) отдают фрагмент целиком тому, кто говорит в нем дольше всех.</li>
 <li>Распознавание с <code>--diarize</code> идет примерно в полтора-два раза дольше. Какие модели для этого нужны - на странице <a href="../models/#diarization">Модели</a>.</li>

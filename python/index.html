@@ -1100,7 +1100,7 @@
 <td style="text-align: left;"><code>speakers</code></td>
 <td style="text-align: left;">int</td>
 <td style="text-align: left;"><code>None</code></td>
-<td style="text-align: left;">Точное число говорящих, включает <code>diarize</code>; <code>None</code> - определяется по записи</td>
+<td style="text-align: left;">Точное число говорящих от 1 до 100, включает <code>diarize</code>; <code>None</code> - определяется по записи</td>
 </tr>
 </tbody>
 </table>
@@ -1113,12 +1113,16 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><code>transcribe(path)</code></td>
+<td style="text-align: left;"><code>transcribe(path, *, diarize=None, speakers=None)</code></td>
 <td style="text-align: left;">Распознает файл и возвращает <code>Transcript</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>transcribe_audio(audio, source=None)</code></td>
+<td style="text-align: left;"><code>transcribe_audio(audio, source=None, *, diarize=None, speakers=None)</code></td>
 <td style="text-align: left;">Распознает запись в памяти (<code>Audio</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>speaker_options(diarize=None, speakers=None)</code></td>
+<td style="text-align: left;">Значения разделения говорящих для одной записи: пара «разделять» и «точное число»</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>load(path, *, max_duration=None)</code></td>
@@ -1189,6 +1193,11 @@
 <p><code>save(path, fmt=None)</code> сохраняет результат в <a href="../formats/">формате</a> по расширению файла или из <code>fmt</code>.</p>
 <p><code>Segment</code> - фрагмент речи: <code>start</code> и <code>end</code> в секундах, <code>text</code>, <code>channel</code> (номер канала с нуля; <code>None</code> - каналы сведены), <code>speaker_id</code> (номер говорящего при диаризации, с единицы), <code>speaker</code> («Говорящий N», «Канал N» или <code>None</code>) и <code>duration</code>.</p>
 <h2 id="diarization">Разделение говорящих<a class="headerlink" href="#diarization" title="Permanent link">&para;</a></h2>
+<p><code>diarize</code> и <code>speakers</code> у <code>transcribe</code> и <code>transcribe_audio</code> заменяют значения <code>Transcriber</code> для одной записи: <code>speakers</code> включает разделение, <code>diarize=False</code> выключает. Модели, если их еще нет в памяти, загружаются при первом использовании.</p>
+<div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="n">transcriber</span> <span class="o">=</span> <span class="n">Transcriber</span><span class="p">()</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">transcriber</span><span class="o">.</span><span class="n">transcribe</span><span class="p">(</span><span class="s2">"meeting.mp3"</span><span class="p">,</span> <span class="n">speakers</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">segments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">speaker</span>
+<span class="s1">'Говорящий 1'</span>
+</code></pre></div>
 <div class="admonition info">
 <p><strong>stt_ru.diarization.Diarizer</strong>, <strong>stt_ru.diarization.Turn</strong></p>
 </div>

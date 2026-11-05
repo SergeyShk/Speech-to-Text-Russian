@@ -1063,6 +1063,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <h2 id="web-interface">Web interface<a class="headerlink" href="#web-interface" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Upload by drag and drop or by choosing files, several files in a row, an upload progress bar.</li>
+<li>Before uploading, speaker separation can be turned on and the number of speakers set for this recording.</li>
 <li>The list of jobs of this browser with their state: queued and the place in the queue, running, done, failed.</li>
 <li>A waveform per channel with the segments of each speaker, a player and a table of segments: clicking a row or the waveform jumps to that place in the recording, and the current segment is highlighted.</li>
 <li>Downloading the result in TXT, JSON, JSONL, SRT, VTT, ASS and CSV, deleting a job.</li>
@@ -1121,12 +1122,12 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <tr>
 <td style="text-align: left;"><code>--diarize</code></td>
 <td style="text-align: left;">off</td>
-<td style="text-align: left;"><a href="../transcribe/#diarization">Separate speakers</a> in single-track recordings</td>
+<td style="text-align: left;"><a href="../transcribe/#diarization">Separate speakers</a> unless a job says otherwise; the models are loaded at startup</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>--speakers</code></td>
 <td style="text-align: left;">-</td>
-<td style="text-align: left;">Exact number of speakers in every recording, turns on <code>--diarize</code></td>
+<td style="text-align: left;">Exact number of speakers from 1 to 100 unless a job says otherwise; turns on <code>--diarize</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>-q</code>, <code>--quiet</code></td>
@@ -1135,6 +1136,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 </tbody>
 </table>
+<p>Without <code>--diarize</code>, speaker separation is available too: the first such job loads the <a href="../models/#diarization">models</a>, downloading them if needed, and fails without network and cache.</p>
 <p>The model and speech detection parameters are on the <a href="../models/#options">Models</a> page. The address and parameters are checked before the model is loaded: a busy port gives a message and exit code 1.</p>
 <h2 id="token">Access token<a class="headerlink" href="#token" title="Permanent link">&para;</a></h2>
 <p>The token is set by the <code>STT_RU_TOKEN</code> environment variable (a command line parameter would be visible to everyone in the process list). With a token, all job actions require the <code>Authorization: Bearer &lt;token&gt;</code> header; the web interface asks for the token once and keeps it in a cookie for 30 days. Without a token, the page, <code>/healthz</code>, <code>/v1/info</code> and the API reference are open. The token is a string of Latin letters, digits, <code>-</code> and <code>_</code>: many HTTP clients do not send Cyrillic in headers.</p>
@@ -1159,7 +1161,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <tbody>
 <tr>
 <td style="text-align: left;"><code>POST /v1/transcriptions</code></td>
-<td style="text-align: left;">Queues a file (multipart, field <code>file</code>): response 202 with the job and a <code>Location</code> header</td>
+<td style="text-align: left;">Queues a file (multipart, field <code>file</code>): response 202 with the job and a <code>Location</code> header. Optional fields: <code>speakers</code> - exact number of speakers from 1 to 100, <code>diarize</code> - <code>true</code> or <code>false</code>, whether to separate them; without them - as set at service startup</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/jobs/{id}</code></td>
@@ -1183,7 +1185,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/info</code></td>
-<td style="text-align: left;">Version, model, limits, formats, whether a token is required</td>
+<td style="text-align: left;">Version, model, limits, formats, whether a token is required, default speaker separation and the largest number of speakers</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /healthz</code></td>
@@ -1191,7 +1193,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 </tbody>
 </table>
-<p>A job is JSON with the fields <code>id</code>, <code>status</code> (<code>queued</code>, <code>running</code>, <code>done</code>, <code>failed</code>), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (when the job will be deleted), <code>position</code> (how many jobs are ahead), <code>duration</code>, <code>channels</code>, <code>segments</code> (number of segments) and <code>error</code>. Errors are <code>{"detail": "..."}</code> with messages in Russian: 401 without a token, 404 for a deleted job, 409 for a job that is not ready or failed, 413 for a large file, 503 when the queue is full.</p>
+<p>A job is JSON with the fields <code>id</code>, <code>status</code> (<code>queued</code>, <code>running</code>, <code>done</code>, <code>failed</code>), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (when the job will be deleted), <code>position</code> (how many jobs are ahead), <code>duration</code>, <code>channels</code>, <code>segments</code> (number of segments), <code>diarize</code> and <code>speakers</code> (speaker separation of this job) and <code>error</code>. Errors are <code>{"detail": "..."}</code> with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">token</span><span class="o">=</span><span class="s2">"Authorization: Bearer my-secret-token"</span>
 <span class="nv">job</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>-F<span class="w"> </span><span class="nv">file</span><span class="o">=</span>@call.wav<span class="w"> </span>http://127.0.0.1:8000/v1/transcriptions<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span>.id<span class="k">)</span>
 curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>http://127.0.0.1:8000/v1/jobs/<span class="nv">$job</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.status
@@ -1204,7 +1206,9 @@ curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span>
 <span class="n">api</span> <span class="o">=</span> <span class="s2">"http://127.0.0.1:8000/v1"</span>
 <span class="n">headers</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"Authorization"</span><span class="p">:</span> <span class="s2">"Bearer my-secret-token"</span><span class="p">}</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"call.wav"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/transcriptions"</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="n">file</span><span class="p">},</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+    <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/transcriptions"</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="n">file</span><span class="p">},</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s2">"speakers"</span><span class="p">:</span> <span class="mi">2</span><span class="p">},</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
 <span class="k">while</span> <span class="n">job</span><span class="p">[</span><span class="s2">"status"</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"queued"</span><span class="p">,</span> <span class="s2">"running"</span><span class="p">):</span>
     <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/jobs/</span><span class="si">{</span><span class="n">job</span><span class="p">[</span><span class="s1">'id'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>

@@ -1172,7 +1172,7 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span clas
 <tr>
 <td style="text-align: left;"><code>--speakers</code></td>
 <td style="text-align: left;">-</td>
-<td style="text-align: left;">Exact number of speakers in every recording, turns on <code>--diarize</code></td>
+<td style="text-align: left;">Exact number of speakers in every recording, from 1 to 100; turns on <code>--diarize</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>-q</code>, <code>--quiet</code></td>
@@ -1188,7 +1188,7 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span clas
 stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span class="w"> </span>--mono<span class="w"> </span>--speakers<span class="w"> </span><span class="m">2</span><span class="w">    </span><span class="c1"># channels mixed, exactly two speakers</span>
 </code></pre></div>
 <ul>
-<li>If the number of speakers is known, pass it in <code>--speakers</code>: this prevents extra speakers and keeps similar voices apart.</li>
+<li>If the number of speakers is known, pass it in <code>--speakers</code>: this also finds a person who speaks very little, about 1-2% of the time. A number below the real one merges people. One or two above it does almost no harm but adds extra speakers with a few segments; a much higher number splits people. There can also be fewer speakers than requested: a voice that never outweighs the others does not reach the result.</li>
 <li>Different channels of a stereo recording already separate speakers: for them <code>--diarize</code> only prints a warning. To separate speakers in a mixed recording, use <code>--mono</code>.</li>
 <li>Models without word times (Whisper) give a whole segment to whoever speaks longest in it.</li>
 <li>Transcription with <code>--diarize</code> takes about one and a half to two times longer. The models it needs are on the <a href="../models/#diarization">Models</a> page.</li>

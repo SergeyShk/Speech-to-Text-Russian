@@ -1063,6 +1063,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <h2 id="-_1">Веб-интерфейс<a class="headerlink" href="#-_1" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Загрузка перетаскиванием или выбором, несколько файлов подряд, полоса загрузки.</li>
+<li>Перед загрузкой можно включить разделение говорящих и указать их число для этой записи.</li>
 <li>Список задач этого браузера с состоянием: в очереди и место в ней, распознается, готово, ошибка.</li>
 <li>Форма волны по каналам с фрагментами каждого говорящего, плеер и таблица фрагментов: щелчок по строке или по форме волны переходит к месту записи, текущий фрагмент подсвечивается.</li>
 <li>Скачивание результата в TXT, JSON, JSONL, SRT, VTT, ASS и CSV, удаление задачи.</li>
@@ -1121,12 +1122,12 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <tr>
 <td style="text-align: left;"><code>--diarize</code></td>
 <td style="text-align: left;">выключен</td>
-<td style="text-align: left;"><a href="../transcribe/#diarization">Разделять говорящих</a> в записях с одной дорожкой</td>
+<td style="text-align: left;"><a href="../transcribe/#diarization">Разделять говорящих</a>, если задача не указала иное; модели загружаются при запуске</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>--speakers</code></td>
 <td style="text-align: left;">-</td>
-<td style="text-align: left;">Точное число говорящих в каждой записи, включает <code>--diarize</code></td>
+<td style="text-align: left;">Точное число говорящих от 1 до 100, если задача не указала иное; включает <code>--diarize</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>-q</code>, <code>--quiet</code></td>
@@ -1135,6 +1136,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 </tbody>
 </table>
+<p>Без <code>--diarize</code> разделение говорящих тоже доступно: первая такая задача загружает <a href="../models/#diarization">модели</a>, при необходимости скачивая их, а без сети и без кэша завершается ошибкой.</p>
 <p>Параметры модели и поиска речи - на странице <a href="../models/#options">Модели</a>. Адрес и параметры проверяются до загрузки модели: занятый порт - сообщение и код 1.</p>
 <h2 id="token">Токен доступа<a class="headerlink" href="#token" title="Permanent link">&para;</a></h2>
 <p>Токен задается переменной окружения <code>STT_RU_TOKEN</code> (параметр командной строки был бы виден всем в списке процессов). С токеном все действия с задачами требуют заголовок <code>Authorization: Bearer &lt;токен&gt;</code>; веб-интерфейс спрашивает токен один раз и хранит его в cookie на 30 дней. Без токена открыты страница, <code>/healthz</code>, <code>/v1/info</code> и описание API. Токен - строка из латинских букв, цифр и знаков <code>-</code> и <code>_</code>: многие клиенты HTTP не передают кириллицу в заголовках.</p>
@@ -1159,7 +1161,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <tbody>
 <tr>
 <td style="text-align: left;"><code>POST /v1/transcriptions</code></td>
-<td style="text-align: left;">Ставит файл (multipart, поле <code>file</code>) в очередь: ответ 202 с задачей и заголовком <code>Location</code></td>
+<td style="text-align: left;">Ставит файл (multipart, поле <code>file</code>) в очередь: ответ 202 с задачей и заголовком <code>Location</code>. Необязательные поля: <code>speakers</code> - точное число говорящих от 1 до 100, <code>diarize</code> - <code>true</code> или <code>false</code>, разделять ли их; без них - как при запуске сервиса</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/jobs/{id}</code></td>
@@ -1183,7 +1185,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/info</code></td>
-<td style="text-align: left;">Версия, модель, пределы, форматы, нужен ли токен</td>
+<td style="text-align: left;">Версия, модель, пределы, форматы, нужен ли токен, разделение говорящих по умолчанию и наибольшее число говорящих</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /healthz</code></td>
@@ -1191,7 +1193,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 </tbody>
 </table>
-<p>Задача - JSON с полями <code>id</code>, <code>status</code> (<code>queued</code> - в очереди, <code>running</code> - распознается, <code>done</code> - готово, <code>failed</code> - ошибка), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (когда задача будет удалена), <code>position</code> (сколько задач перед ней), <code>duration</code>, <code>channels</code>, <code>segments</code> (число фрагментов) и <code>error</code>. Ошибки - <code>{"detail": "..."}</code>: 401 без токена, 404 для удаленной задачи, 409 для неготовой или упавшей, 413 для большого файла, 503 при полной очереди.</p>
+<p>Задача - JSON с полями <code>id</code>, <code>status</code> (<code>queued</code> - в очереди, <code>running</code> - распознается, <code>done</code> - готово, <code>failed</code> - ошибка), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (когда задача будет удалена), <code>position</code> (сколько задач перед ней), <code>duration</code>, <code>channels</code>, <code>segments</code> (число фрагментов), <code>diarize</code> и <code>speakers</code> (разделение говорящих этой задачи) и <code>error</code>. Ошибки - <code>{"detail": "..."}</code>: 401 без токена, 404 для удаленной задачи, 400 для неизвестного формата результата, 409 для неготовой или упавшей, 413 для большого файла, 422 для неверных параметров, 503 при полной очереди.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">token</span><span class="o">=</span><span class="s2">"Authorization: Bearer my-secret-token"</span>
 <span class="nv">job</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>-F<span class="w"> </span><span class="nv">file</span><span class="o">=</span>@call.wav<span class="w"> </span>http://127.0.0.1:8000/v1/transcriptions<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span>.id<span class="k">)</span>
 curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>http://127.0.0.1:8000/v1/jobs/<span class="nv">$job</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.status
@@ -1204,7 +1206,9 @@ curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span>
 <span class="n">api</span> <span class="o">=</span> <span class="s2">"http://127.0.0.1:8000/v1"</span>
 <span class="n">headers</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"Authorization"</span><span class="p">:</span> <span class="s2">"Bearer my-secret-token"</span><span class="p">}</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"call.wav"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/transcriptions"</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="n">file</span><span class="p">},</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+    <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/transcriptions"</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="n">file</span><span class="p">},</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s2">"speakers"</span><span class="p">:</span> <span class="mi">2</span><span class="p">},</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
 <span class="k">while</span> <span class="n">job</span><span class="p">[</span><span class="s2">"status"</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"queued"</span><span class="p">,</span> <span class="s2">"running"</span><span class="p">):</span>
     <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/jobs/</span><span class="si">{</span><span class="n">job</span><span class="p">[</span><span class="s1">'id'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span><span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
