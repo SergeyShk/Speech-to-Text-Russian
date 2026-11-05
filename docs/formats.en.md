@@ -26,7 +26,7 @@ The examples below are the result of `stt-ru transcribe call.wav` for a stereo r
 
 ## JSON { #json }
 
-An object with the fields `source` (file name), `model`, `duration` (recording duration, s), `channels` (number of recognized channels) and `segments`. A segment has `start` and `end` in seconds, `channel`, `speaker_id` (speaker number with separation), `speaker` and `text`; for mixed channels `channel` is `null`, and without speaker separation `speaker_id` and `speaker` are `null` too.
+An object with the fields `source` (file name), `model`, `duration` (recording duration, s), `channels` (number of recognized channels) and `segments`. A segment has `start` and `end` in seconds, `channel`, `speaker_id` (speaker number with separation), `speaker` and `text`; `speaker_id` is `null` without speaker separation; for mixed channels `channel` is `null`, and without separation `speaker` is too.
 
 ``` json
 {

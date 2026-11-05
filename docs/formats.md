@@ -26,7 +26,7 @@
 
 ## JSON { #json }
 
-Объект с полями `source` (имя файла), `model`, `duration` (длительность записи, с), `channels` (число распознанных каналов) и `segments`. У фрагмента - `start` и `end` в секундах, `channel`, `speaker_id` (номер говорящего при разделении), `speaker` и `text`; у сведенных каналов `channel` равен `null`, а без разделения говорящих `null` равны и `speaker_id`, и `speaker`.
+Объект с полями `source` (имя файла), `model`, `duration` (длительность записи, с), `channels` (число распознанных каналов) и `segments`. У фрагмента - `start` и `end` в секундах, `channel`, `speaker_id` (номер говорящего при разделении), `speaker` и `text`; `speaker_id` равен `null` без разделения говорящих; у сведенных каналов `channel` равен `null`, а без разделения и `speaker` тоже.
 
 ``` json
 {
