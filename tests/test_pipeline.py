@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import ClassVar
 
@@ -418,6 +419,68 @@ class TestDiarization:
         audio = Audio(stereo(), 8000)
         Transcriber(diarize=True, split_channels=False).transcribe_audio(audio)
         assert len(diarizing[0].calls) == 1
+
+    def test_turned_on_for_one_record(self, diarizing):
+        transcriber = Transcriber()
+        assert diarizing == []
+        first = transcriber.transcribe_audio(mono(), diarize=True)
+        second = transcriber.transcribe_audio(mono(), speakers=2)
+        plain = transcriber.transcribe_audio(mono())
+        assert first.segments[0].speaker_id == 1
+        assert second.segments[0].speaker_id == 1
+        assert plain.segments[0].speaker_id is None
+        assert len(diarizing) == 1
+        assert [call[2] for call in diarizing[0].calls] == [None, 2]
+
+    def test_turned_off_for_one_record(self, diarizing):
+        transcriber = Transcriber(speakers=2)
+        assert transcriber.transcribe_audio(mono(), diarize=False).segments[0].speaker_id is None
+        assert diarizing[0].calls == []
+
+    def test_default_speakers_kept(self, diarizing):
+        Transcriber(speakers=2).transcribe_audio(mono(), diarize=True)
+        assert diarizing[0].calls[0][2] == 2
+
+    def test_file_options(self, diarizing, tmp_path):
+        path = tmp_path / "rec.wav"
+        sf.write(path, mono().samples, 8000)
+        segments = Transcriber().transcribe(path, speakers=3).segments
+        assert segments[0].speaker_id == 1
+        assert diarizing[0].calls[0][2] == 3
+
+    def test_loaded_once_from_threads(self, diarizing):
+        transcriber = Transcriber()
+        threads = [
+            threading.Thread(
+                target=transcriber.transcribe_audio, args=(mono(),), kwargs={"diarize": True}
+            )
+            for _ in range(8)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len(diarizing) == 1
+        assert len(diarizing[0].calls) == 8
+
+    @pytest.mark.parametrize(
+        ("options", "message"),
+        [
+            ({"speakers": 0}, "Число говорящих должно быть положительным"),
+            ({"diarize": False, "speakers": 2}, "разделение говорящих выключено"),
+        ],
+    )
+    def test_wrong_options(self, diarizing, options, message):
+        with pytest.raises(ParameterError, match=message):
+            Transcriber().transcribe_audio(mono(), **options)
+
+    def test_speaker_options(self, diarizing):
+        assert Transcriber().speaker_options() == (False, None)
+        assert Transcriber().speaker_options(diarize=True) == (True, None)
+        assert Transcriber(diarize=True).speaker_options() == (True, None)
+        assert Transcriber(speakers=4).speaker_options() == (True, 4)
+        assert Transcriber(speakers=4).speaker_options(speakers=2) == (True, 2)
+        assert Transcriber(speakers=4).speaker_options(diarize=False) == (False, None)
 
     def test_windows_keep_offset(self, diarizing, monkeypatch):
         monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)

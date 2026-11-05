@@ -21,8 +21,9 @@
 
 | Метод | Описание |
 | :---- | :------- |
-| `transcribe(path)` | Распознает файл и возвращает `Transcript` |
-| `transcribe_audio(audio, source=None)` | Распознает запись в памяти (`Audio`) |
+| `transcribe(path, *, diarize=None, speakers=None)` | Распознает файл и возвращает `Transcript` |
+| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None)` | Распознает запись в памяти (`Audio`) |
+| `speaker_options(diarize=None, speakers=None)` | Значения разделения говорящих для одной записи: пара «разделять» и «точное число» |
 | `load(path, *, max_duration=None)` | Читает файл с частотой, которую принимает модель; `max_duration` в секундах ограничивает длину записи |
 
 ``` python
@@ -58,6 +59,14 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 `Segment` - фрагмент речи: `start` и `end` в секундах, `text`, `channel` (номер канала с нуля; `None` - каналы сведены), `speaker_id` (номер говорящего при диаризации, с единицы), `speaker` («Говорящий N», «Канал N» или `None`) и `duration`.
 
 ## Разделение говорящих { #diarization }
+
+`diarize` и `speakers` у `transcribe` и `transcribe_audio` заменяют значения `Transcriber` для одной записи: `speakers` включает разделение, `diarize=False` выключает. Модели, если их еще нет в памяти, загружаются при первом использовании.
+
+``` python
+>>> transcriber = Transcriber()
+>>> transcriber.transcribe("meeting.mp3", speakers=3).segments[0].speaker
+'Говорящий 1'
+```
 
 !!! info ""
     **stt_ru.diarization.Diarizer**, **stt_ru.diarization.Turn**

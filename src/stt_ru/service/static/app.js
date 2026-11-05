@@ -142,7 +142,15 @@ function uploadOne(file, errors) {
       fail(`файл больше ${megabytes(state.info.max_size)}`);
       return;
     }
+    const diarize = $("diarize").checked;
+    const speakers = $("speakers").value.trim();
+    if (diarize && speakers && !(Number.isInteger(Number(speakers)) && Number(speakers) >= 1)) {
+      fail("число говорящих должно быть целым и положительным");
+      return;
+    }
     const form = new FormData();
+    form.append("diarize", diarize);
+    if (diarize && speakers) form.append("speakers", String(Number(speakers)));
     form.append("file", file);
     const xhr = new XMLHttpRequest();
     const bar = $("progress-bar");
@@ -295,6 +303,7 @@ async function renderJob() {
   const details = [megabytes(job.size)];
   if (job.duration !== null) details.push(length(job.duration));
   if (job.channels !== null) details.push(`каналов ${job.channels}`);
+  if (job.diarize) details.push(job.speakers ? `говорящих ${job.speakers}` : "разделение говорящих");
   details.push(`загружена ${new Date(job.created).toLocaleString("ru-RU")}`);
   $("details").textContent = details.join(" · ");
   const status = $("status");
@@ -450,6 +459,9 @@ function start() {
   const limits = [`до ${megabytes(info.max_size)}`];
   if (info.max_duration) limits.push(`до ${length(info.max_duration)}`);
   $("limits").textContent = limits.join(", ");
+  $("diarize").checked = info.diarize;
+  $("speakers").value = info.speakers ?? "";
+  $("speakers-field").hidden = !info.diarize;
   state.jobs = new Map(storedIds().map((id) => [id, null]));
   renderList();
   const id = location.hash.slice(1);
@@ -470,6 +482,9 @@ function start() {
 async function init() {
   const input = $("file");
   input.multiple = true;
+  $("diarize").addEventListener("change", (event) => {
+    $("speakers-field").hidden = !event.currentTarget.checked;
+  });
   input.addEventListener("change", () => {
     upload([...input.files]);
     input.value = "";

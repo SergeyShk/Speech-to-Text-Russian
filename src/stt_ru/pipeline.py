@@ -1,4 +1,5 @@
 import os
+import threading
 from collections.abc import Sequence
 from dataclasses import replace
 from itertools import pairwise
@@ -58,7 +59,9 @@ class Transcriber:
             отдает фрагмент целиком тому, кто говорит в нем дольше всех. Разные каналы
             и так разделены: для них диаризация не выполняется, нужен split_channels=False
         speakers (int): Точное число говорящих в записи, включает diarize;
-            None - определяется по записи
+            None - определяется по записи. Параметры transcribe и transcribe_audio заменяют
+            diarize и speakers для одной записи (см. speaker_options); модели диаризации
+            при этом загружаются при первом использовании
 
     Исключения:
         ModelError: Если модель не загружается
@@ -93,14 +96,54 @@ class Transcriber:
         self.split_channels = split_channels
         self.ffmpeg = ffmpeg
         self.speakers = speakers
-        self.diarizer = Diarizer(providers=providers) if diarize or speakers is not None else None
+        self.diarize = diarize or speakers is not None
+        self.diarizer = Diarizer(providers=providers) if self.diarize else None
+        self._providers = providers
+        self._diarizer_lock = threading.Lock()
 
-    def transcribe(self, path: str | os.PathLike[str]) -> Transcript:
+    def speaker_options(
+        self, diarize: bool | None = None, speakers: int | None = None
+    ) -> tuple[bool, int | None]:
+        """
+        Параметры разделения говорящих для одной записи
+
+        Описание:
+            speakers включает разделение; None берет значение, заданное при создании
+
+        Аргументы:
+            diarize (bool): Разделять говорящих; None - как задано при создании
+            speakers (int): Точное число говорящих; None - как задано при создании
+
+        Вывод:
+            tuple[bool, int | None]: Разделять ли говорящих и их точное число, если известно
+
+        Исключения:
+            ParameterError: Если speakers меньше единицы или задан вместе с diarize=False
+        """
+        if speakers is not None and speakers < 1:
+            raise ParameterError(f"Число говорящих должно быть положительным: {speakers}")
+        if diarize is False:
+            if speakers is not None:
+                raise ParameterError("Число говорящих задано, а разделение говорящих выключено")
+            return False, None
+        if speakers is not None:
+            return True, speakers
+        return (True, self.speakers) if diarize or self.diarize else (False, None)
+
+    def transcribe(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        diarize: bool | None = None,
+        speakers: int | None = None,
+    ) -> Transcript:
         """
         Распознавание аудиофайла
 
         Аргументы:
             path (str): Путь к файлу (см. load_audio)
+            diarize (bool): Разделять говорящих (см. speaker_options)
+            speakers (int): Точное число говорящих (см. speaker_options)
 
         Вывод:
             Transcript: Фрагменты речи по времени начала
@@ -108,8 +151,13 @@ class Transcriber:
         Исключения:
             FileNotFoundError: Если файла нет
             AudioError: Если файл не читается
+            ModelError: Если не загружаются модели диаризации
+            ParameterError: Если параметры говорящих неверны (см. speaker_options)
         """
-        return self.transcribe_audio(self.load(path), source=Path(path).name)
+        audio = self.load(path)
+        return self.transcribe_audio(
+            audio, source=Path(path).name, diarize=diarize, speakers=speakers
+        )
 
     def load(self, path: str | os.PathLike[str], *, max_duration: float | None = None) -> Audio:
         """
@@ -140,22 +188,34 @@ class Transcriber:
         rate = None if native in SAMPLE_RATES else RESAMPLE_RATE
         return load_audio(path, sample_rate=rate, ffmpeg=self.ffmpeg, max_duration=max_duration)
 
-    def transcribe_audio(self, audio: Audio, source: str | None = None) -> Transcript:
+    def transcribe_audio(
+        self,
+        audio: Audio,
+        source: str | None = None,
+        *,
+        diarize: bool | None = None,
+        speakers: int | None = None,
+    ) -> Transcript:
         """
         Распознавание записи в памяти
 
         Аргументы:
             audio (Audio): Запись с частотой из SAMPLE_RATES
             source (str): Имя файла записи для результата
+            diarize (bool): Разделять говорящих (см. speaker_options)
+            speakers (int): Точное число говорящих (см. speaker_options)
 
         Вывод:
             Transcript: Фрагменты речи по времени начала; фрагменты без текста отбрасываются
 
         Исключения:
             AudioError: Если модель не принимает частоту записи
+            ModelError: Если не загружаются модели диаризации
+            ParameterError: Если параметры говорящих неверны (см. speaker_options)
         """
+        separate, count = self.speaker_options(diarize, speakers)
         tracks, channel_map = self._tracks(audio)
-        timeline = self._timeline(tracks, audio.sample_rate, source)
+        timeline = self._timeline(tracks, audio.sample_rate, source, count) if separate else None
         cuts = cut_points([samples for _, samples in tracks], audio.sample_rate)
         segments: list[Segment] = []
         for start, end in pairwise(cuts):
@@ -190,10 +250,8 @@ class Transcriber:
         )
 
     def _timeline(
-        self, tracks: list[Track], sample_rate: int, source: str | None
+        self, tracks: list[Track], sample_rate: int, source: str | None, speakers: int | None
     ) -> Timeline | None:
-        if self.diarizer is None:
-            return None
         if len(tracks) > 1:
             # Python показывает повтор одного текста один раз: имя файла отличает записи
             warn(
@@ -202,7 +260,13 @@ class Transcriber:
                 stacklevel=3,
             )
             return None
-        return Timeline(self.diarizer.diarize(tracks[0][1], sample_rate, self.speakers))
+        return Timeline(self._loaded_diarizer().diarize(tracks[0][1], sample_rate, speakers))
+
+    def _loaded_diarizer(self) -> Diarizer:
+        with self._diarizer_lock:
+            if self.diarizer is None:
+                self.diarizer = Diarizer(providers=self._providers)
+            return self.diarizer
 
     def _tracks(self, audio: Audio) -> tuple[list[Track], tuple[int | None, ...]]:
         single: tuple[int | None, ...] = (None,) * audio.num_channels

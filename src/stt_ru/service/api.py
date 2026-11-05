@@ -14,6 +14,7 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
+    Form,
     HTTPException,
     Query,
     Request,
@@ -26,6 +27,7 @@ from pydantic import BaseModel, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .. import __version__
+from ..exceptions import ParameterError
 from ..export import FORMATS, dumps
 from .worker import Job, JobQueue, QueueFullError, Status
 
@@ -70,6 +72,8 @@ class JobInfo(BaseModel):
     duration: float | None = Field(None, description="Длительность записи, с")
     channels: int | None = Field(None, description="Число каналов файла")
     segments: int | None = Field(None, description="Число распознанных фрагментов")
+    diarize: bool = Field(description="Разделять говорящих")
+    speakers: int | None = Field(None, description="Точное число говорящих, если задано")
     error: str | None = Field(None, description="Текст ошибки")
 
 
@@ -84,6 +88,8 @@ class ServiceInfo(BaseModel):
     max_duration: float | None = Field(description="Наибольшая длительность записи, с")
     keep: float = Field(description="Сколько секунд задача хранится после окончания")
     formats: list[str] = Field(description="Форматы результата")
+    diarize: bool = Field(description="Разделять ли говорящих, если задача не указала")
+    speakers: int | None = Field(description="Число говорящих, если задача не указала")
 
 
 class Waveform(BaseModel):
@@ -190,6 +196,8 @@ def _info(jobs: JobQueue, job: Job) -> JobInfo:
         duration=job.duration,
         channels=job.channels,
         segments=None if job.transcript is None else len(job.transcript.segments),
+        diarize=job.diarize,
+        speakers=job.speakers,
         error=job.error,
     )
 
@@ -211,6 +219,7 @@ def health() -> dict[str, str]:
 
 @router.get("/v1/info", summary="Сведения о сервисе")
 def service_info(request: Request, settings: Settings) -> ServiceInfo:
+    diarize, speakers = settings.jobs.transcriber.speaker_options()
     return ServiceInfo(
         version=__version__,
         model=settings.jobs.transcriber.recognizer.model,
@@ -220,6 +229,8 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
         max_duration=settings.jobs.max_duration,
         keep=settings.jobs.keep,
         formats=list(FORMATS),
+        diarize=diarize,
+        speakers=speakers,
     )
 
 
@@ -230,14 +241,31 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
     dependencies=protected,
     responses={
         413: {"description": "Файл больше наибольшего размера"},
+        422: {"description": "Неверные параметры"},
         503: {"description": "Очередь заполнена"},
     },
 )
-def create_job(file: UploadFile, response: Response, settings: Settings) -> JobInfo:
+def create_job(
+    file: UploadFile,
+    response: Response,
+    settings: Settings,
+    diarize: Annotated[
+        bool | None,
+        Form(description="Разделять говорящих в записи с одной дорожкой; нет - как у сервиса"),
+    ] = None,
+    speakers: Annotated[
+        int | None,
+        Form(ge=1, description="Точное число говорящих, включает разделение; нет - как у сервиса"),
+    ] = None,
+) -> JobInfo:
     if file.size is not None and file.size > settings.max_size:
         raise HTTPException(413, _too_large(settings.max_size))
     try:
-        job = settings.jobs.submit(file.filename or "audio", file.file)
+        job = settings.jobs.submit(
+            file.filename or "audio", file.file, diarize=diarize, speakers=speakers
+        )
+    except ParameterError as error:
+        raise HTTPException(422, str(error)) from error
     except QueueFullError as error:
         raise HTTPException(503, str(error), {"Retry-After": "60"}) from error
     response.headers["Location"] = f"/v1/jobs/{job.id}"

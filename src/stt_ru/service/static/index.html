@@ -38,6 +38,16 @@
           <span class="muted">или нажмите, чтобы выбрать</span>
           <span class="muted small" id="limits"></span>
         </label>
+        <div class="options">
+          <label class="check">
+            <input type="checkbox" id="diarize">
+            <span>Разделять говорящих</span>
+          </label>
+          <label class="count" id="speakers-field" hidden>
+            <span>Число говорящих</span>
+            <input type="number" id="speakers" min="1" step="1" placeholder="авто">
+          </label>
+        </div>
         <div class="progress" id="progress" hidden><div id="progress-bar"></div></div>
         <p class="error" id="upload-error" hidden></p>
       </section>
@@ -52,7 +62,7 @@
     <section class="content" id="content">
       <div class="placeholder" id="placeholder">
         <p>Загрузите запись разговора, диктовки или лекции.</p>
-        <p class="muted">Каналы стереозаписи распознаются отдельно: каждый канал - свой говорящий.</p>
+        <p class="muted">Каналы стереозаписи распознаются отдельно: каждый канал - свой говорящий. В записи с одной дорожкой людей разделяет параметр «Разделять говорящих».</p>
       </div>
 
       <article class="card result" id="result" hidden>

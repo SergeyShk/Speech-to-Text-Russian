@@ -45,6 +45,8 @@ class Job:
         channels (int): Число каналов файла
         peaks (list[list[float]]): Пики формы волны по каналам (см. Audio.peaks)
         transcript (Transcript): Результат распознавания
+        diarize (bool): Разделять говорящих
+        speakers (int): Точное число говорящих; None - определяется по записи
     """
 
     id: str
@@ -61,6 +63,8 @@ class Job:
     peaks: list[list[float]] | None = None
     transcript: Transcript | None = None
     deleted: bool = False
+    diarize: bool = False
+    speakers: int | None = None
 
 
 class QueueFullError(SttRuError):
@@ -136,20 +140,31 @@ class JobQueue:
         for thread in self._threads:
             thread.start()
 
-    def submit(self, filename: str, content: BinaryIO) -> Job:
+    def submit(
+        self,
+        filename: str,
+        content: BinaryIO,
+        *,
+        diarize: bool | None = None,
+        speakers: int | None = None,
+    ) -> Job:
         """
         Постановка файла в очередь
 
         Аргументы:
             filename (str): Имя файла у пользователя; каталоги отбрасываются
             content (BinaryIO): Содержимое файла, читается до конца
+            diarize (bool): Разделять говорящих (см. Transcriber.speaker_options)
+            speakers (int): Точное число говорящих (см. Transcriber.speaker_options)
 
         Вывод:
             Job: Задача в очереди
 
         Исключения:
             QueueFullError: Если в очереди max_queue задач
+            ParameterError: Если параметры говорящих неверны
         """
+        separate, count = self.transcriber.speaker_options(diarize, speakers)
         with self._lock:
             if self._waiting() + self._reserved >= self.max_queue:
                 raise QueueFullError(f"Очередь заполнена: задач в ней {self.max_queue}")
@@ -164,7 +179,15 @@ class JobQueue:
             folder.mkdir()
             with path.open("wb") as file:
                 shutil.copyfileobj(content, file, 1 << 20)
-            job = Job(job_id, name, path, path.stat().st_size, self.clock())
+            job = Job(
+                job_id,
+                name,
+                path,
+                path.stat().st_size,
+                self.clock(),
+                diarize=separate,
+                speakers=count,
+            )
         except BaseException:
             with self._lock:
                 self._reserved -= 1
@@ -310,7 +333,9 @@ class JobQueue:
             peaks = [[round(float(peak), 3) for peak in row] for row in audio.peaks(PEAKS)]
             with self._lock:
                 job.duration, job.channels, job.peaks = audio.duration, audio.num_channels, peaks
-            transcript = self.transcriber.transcribe_audio(audio, source=job.filename)
+            transcript = self.transcriber.transcribe_audio(
+                audio, source=job.filename, diarize=job.diarize, speakers=job.speakers
+            )
         except Exception as error:
             text = str(error) or type(error).__name__
             # Клиенту не нужен путь к файлу на сервере

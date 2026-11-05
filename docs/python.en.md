@@ -21,8 +21,9 @@
 
 | Method | Description |
 | :----- | :---------- |
-| `transcribe(path)` | Transcribes a file and returns a `Transcript` |
-| `transcribe_audio(audio, source=None)` | Transcribes an in-memory recording (`Audio`) |
+| `transcribe(path, *, diarize=None, speakers=None)` | Transcribes a file and returns a `Transcript` |
+| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None)` | Transcribes an in-memory recording (`Audio`) |
+| `speaker_options(diarize=None, speakers=None)` | Speaker separation values for one recording: a pair of "separate" and "exact number" |
 | `load(path, *, max_duration=None)` | Reads a file with a sample rate the model accepts; `max_duration` in seconds limits the recording length |
 
 ``` python
@@ -58,6 +59,14 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 `Segment` is a speech segment: `start` and `end` in seconds, `text`, `channel` (channel number from zero; `None` - channels are mixed), `speaker_id` (speaker number with diarization, from one), `speaker` («Говорящий N», «Канал N» or `None`) and `duration`.
 
 ## Speaker separation { #diarization }
+
+`diarize` and `speakers` of `transcribe` and `transcribe_audio` replace the `Transcriber` values for one recording: `speakers` turns separation on, `diarize=False` turns it off. If the models are not in memory yet, they are loaded on first use.
+
+``` python
+>>> transcriber = Transcriber()
+>>> transcriber.transcribe("meeting.mp3", speakers=3).segments[0].speaker
+'Говорящий 1'
+```
 
 !!! info ""
     **stt_ru.diarization.Diarizer**, **stt_ru.diarization.Turn**

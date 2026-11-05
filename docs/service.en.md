@@ -18,6 +18,7 @@ The REST API reference with request examples is at `/docs`.
 ## Web interface
 
 *   Upload by drag and drop or by choosing files, several files in a row, an upload progress bar.
+*   Before uploading, speaker separation can be turned on and the number of speakers set for this recording.
 *   The list of jobs of this browser with their state: queued and the place in the queue, running, done, failed.
 *   A waveform per channel with the segments of each speaker, a player and a table of segments: clicking a row or the waveform jumps to that place in the recording, and the current segment is highlighted.
 *   Downloading the result in TXT, JSON, JSONL, SRT, VTT, ASS and CSV, deleting a job.
@@ -36,8 +37,8 @@ Jobs are visible in the browser they were uploaded from: their list is kept in t
 | `--max-queue` | `100` | How many files can wait in the queue |
 | `--keep` | `24` | How many hours to keep a file and its result after transcription |
 | `--data-dir` | the system temporary folder | Folder for uploaded and temporary files |
-| `--diarize` | off | [Separate speakers](transcribe.md#diarization) in single-track recordings |
-| `--speakers` | - | Exact number of speakers in every recording, turns on `--diarize` |
+| `--diarize` | off | [Separate speakers](transcribe.md#diarization) unless a job says otherwise; the models are loaded at startup |
+| `--speakers` | - | Exact number of speakers unless a job says otherwise; turns on `--diarize` |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 The model and speech detection parameters are on the [Models](models.md#options) page. The address and parameters are checked before the model is loaded: a busy port gives a message and exit code 1.
@@ -63,16 +64,16 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 
 | Method and path | What it does |
 | :-------------- | :----------- |
-| `POST /v1/transcriptions` | Queues a file (multipart, field `file`): response 202 with the job and a `Location` header |
+| `POST /v1/transcriptions` | Queues a file (multipart, field `file`): response 202 with the job and a `Location` header. Optional fields: `speakers` - exact number of speakers, `diarize` - `true` or `false`, whether to separate them; without them - as set at service startup |
 | `GET /v1/jobs/{id}` | Job state |
 | `GET /v1/jobs/{id}/result?format=srt` | Result in a format (`json` by default) with the file name in `Content-Disposition` |
 | `GET /v1/jobs/{id}/waveform` | Waveform peaks per channel |
 | `GET /v1/jobs/{id}/audio` | The uploaded file, with seeking support (`Range`): audio and video for the player, anything else as an attachment |
 | `DELETE /v1/jobs/{id}` | Deletes the job and its files |
-| `GET /v1/info` | Version, model, limits, formats, whether a token is required |
+| `GET /v1/info` | Version, model, limits, formats, whether a token is required, default speaker separation |
 | `GET /healthz` | Health check: `{"status": "ok"}` |
 
-A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 409 for a job that is not ready or failed, 413 for a large file, 503 when the queue is full.
+A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments), `diarize` and `speakers` (speaker separation of this job) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.
 
 ``` bash
 token="Authorization: Bearer my-secret-token"
@@ -89,7 +90,9 @@ import requests
 api = "http://127.0.0.1:8000/v1"
 headers = {"Authorization": "Bearer my-secret-token"}
 with open("call.wav", "rb") as file:
-    job = requests.post(f"{api}/transcriptions", files={"file": file}, headers=headers).json()
+    job = requests.post(
+        f"{api}/transcriptions", files={"file": file}, data={"speakers": 2}, headers=headers
+    ).json()
 while job["status"] in ("queued", "running"):
     time.sleep(1)
     job = requests.get(f"{api}/jobs/{job['id']}", headers=headers).json()
