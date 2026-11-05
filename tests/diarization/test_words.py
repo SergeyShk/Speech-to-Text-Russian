@@ -21,6 +21,11 @@ def test_speaker(start, end, speaker):
     assert Timeline(TURNS).speaker(start, end) == speaker
 
 
+def test_finished_turn_does_not_subtract():
+    timeline = Timeline([Turn(0.0, 10.0, 1), Turn(1.0, 2.0, 2), Turn(9.0, 12.0, 2)])
+    assert timeline.speaker(9.5, 11.0) == 2
+
+
 def test_before_first_turn():
     assert Timeline([Turn(3.0, 4.0, 2)]).speaker(0.0, 1.0) == 2
 

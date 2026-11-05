@@ -155,7 +155,7 @@ class Transcriber:
             AudioError: Если модель не принимает частоту записи
         """
         tracks, channel_map = self._tracks(audio)
-        timeline = self._timeline(tracks, audio.sample_rate)
+        timeline = self._timeline(tracks, audio.sample_rate, source)
         cuts = cut_points([samples for _, samples in tracks], audio.sample_rate)
         segments: list[Segment] = []
         for start, end in pairwise(cuts):
@@ -189,12 +189,15 @@ class Transcriber:
             channel_map,
         )
 
-    def _timeline(self, tracks: list[Track], sample_rate: int) -> Timeline | None:
+    def _timeline(
+        self, tracks: list[Track], sample_rate: int, source: str | None
+    ) -> Timeline | None:
         if self.diarizer is None:
             return None
         if len(tracks) > 1:
+            # Python показывает повтор одного текста один раз: имя файла отличает записи
             warn(
-                "Каналы записи разные, каждый считается говорящим: "
+                f"{source or 'Запись'}: каналы разные, каждый считается говорящим; "
                 "чтобы разделить говорящих в сведенной записи, нужно сводить каналы в один",
                 stacklevel=3,
             )

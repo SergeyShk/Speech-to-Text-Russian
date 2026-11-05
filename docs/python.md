@@ -69,7 +69,7 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 | `threshold` | float | `0.7` | Порог сведения голосов: чем больше, тем меньше говорящих |
 | `providers` | list[str] | `None` | Провайдеры ONNX Runtime; `None` - как у `Transcriber` |
 
-`diarize(samples, sample_rate, speakers=None)` принимает одномерный массив отсчетов и возвращает список `Turn` по времени начала: `start` и `end` в секундах, `speaker` - номер с единицы. Реплики разных людей могут перекрываться.
+`diarize(samples, sample_rate, speakers=None)` принимает одномерный массив отсчетов float32 и возвращает список `Turn` по времени начала: `start` и `end` в секундах, `speaker` - номер с единицы. Реплики разных людей могут перекрываться.
 
 ## Экспорт { #export }
 

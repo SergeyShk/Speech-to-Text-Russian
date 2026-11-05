@@ -1,7 +1,7 @@
 import contextlib
 import math
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -115,17 +115,30 @@ class Diarizer:
             list[Turn]: Реплики по времени начала; пусто, если речи нет
 
         Исключения:
-            AudioError: Если частота не поддерживается
+            AudioError: Если отсчеты не одномерный массив float32 или частота не поддерживается
             ParameterError: Если число говорящих меньше единицы
         """
         if speakers is not None and speakers < 1:
             raise ParameterError(f"Число говорящих должно быть положительным: {speakers}")
+        if samples.ndim != 1 or samples.dtype != np.float32:
+            raise AudioError(
+                f"Отсчеты должны быть одномерным массивом float32: {samples.dtype}, "
+                f"форма {samples.shape}"
+            )
         waveform = self._resample(samples, sample_rate)
         starts, active = self._segment(waveform)
-        chunks, owners, weights = _local_speakers(waveform, starts, active)
-        if not chunks:
+        vectors, owners, weights = [], [], []
+        # Куски считаются сразу: вместе они занимали бы в несколько раз больше самой записи.
+        # В пачке короткие куски разбавлялись бы нулями: onnx-asr не передает модели их длины
+        for chunk, owner, weight in _local_speakers(waveform, starts, active):
+            vectors.append(self._embedder.embedding(chunk))
+            owners.append(owner)
+            weights.append(weight)
+        if not vectors:
             return []
-        labels = cluster(self._embed(chunks), self.threshold, speakers, np.array(weights))
+        matrix = np.stack(vectors)
+        matrix /= np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-9)
+        labels = cluster(matrix, self.threshold, speakers, np.array(weights))
         return _turns(len(waveform), starts, active, owners, labels)
 
     def _resample(self, samples: Samples, sample_rate: int) -> Samples:
@@ -160,17 +173,10 @@ class Diarizer:
             windows.append(POWERSET[logits[0].argmax(axis=-1)])
         return starts, np.stack(windows) if windows else np.zeros((0, 0, 3), dtype=np.int8)
 
-    def _embed(self, chunks: list[Samples]) -> np.ndarray:
-        # onnx-asr не передает модели длины кусков: в пачке короткие куски разбавлялись бы нулями
-        vectors = np.stack([self._embedder.embedding(chunk) for chunk in chunks])
-        scale: np.ndarray = np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-9)
-        return np.asarray(vectors / scale)
-
 
 def _local_speakers(
     waveform: Samples, starts: list[int], active: np.ndarray
-) -> tuple[list[Samples], list[tuple[int, int]], list[int]]:
-    chunks, owners, weights = [], [], []
+) -> Iterator[tuple[Samples, tuple[int, int], int]]:
     alone = active.sum(axis=-1) == 1
     for window, start in enumerate(starts):
         piece = waveform[start : start + WINDOW]
@@ -182,12 +188,9 @@ def _local_speakers(
             chosen = clean if clean.sum() * FRAME_STEP >= MIN_CLEAN else voiced
             mask = np.repeat(chosen, FRAME_STEP)[: len(piece)]
             chunk = piece[: len(mask)][mask]
-            if len(chunk) == 0:
-                continue
-            chunks.append(chunk if len(chunk) >= MIN_CHUNK else np.resize(chunk, MIN_CHUNK))
-            owners.append((window, speaker))
-            weights.append(len(chunk))
-    return chunks, owners, weights
+            if len(chunk) > 0:
+                stretched = chunk if len(chunk) >= MIN_CHUNK else np.resize(chunk, MIN_CHUNK)
+                yield stretched, (window, speaker), len(chunk)
 
 
 def _turns(

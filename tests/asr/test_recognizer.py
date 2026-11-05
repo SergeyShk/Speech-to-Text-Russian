@@ -277,6 +277,12 @@ class TestWords:
         assert (start, end, text) == (1.0, 3.0, "Наталья, благо дарю")
         assert words == [(1.0, 1.4, "Наталья,"), (1.4, 1.7, "благо"), (1.7, 3.0, "дарю")]
 
+    def test_space_before_sign_removed_from_text(self, fake):
+        tokens = [" Он", " —", " вр", "ач."]
+        ((_, _, text, words),) = self.words(fake, timed(tokens, [0.0, 0.5, 1.0, 1.5], "Он— врач."))
+        assert text == "Он— врач."
+        assert words == [(1.0, 2.0, "Он—"), (2.0, 3.0, "врач.")]
+
     def test_space_tokens(self, fake):
         ((_, _, _, words),) = self.words(
             fake, timed(["да", " ", "нет", " "], [0.0, 0.5, 1.0, 1.5], "да нет")
@@ -289,7 +295,13 @@ class TestWords:
 
     @pytest.mark.parametrize(
         ("tokens", "moments", "text"),
-        [(None, None, "да"), ([" да"], None, "да"), ([], [], "да"), ([" да"], [0.0], "другое")],
+        [
+            (None, None, "да"),
+            ([" да"], None, "да"),
+            ([], [], "да"),
+            ([" да"], [0.0], "другое"),
+            ([" "], [0.0], ""),
+        ],
     )
     def test_without_times(self, fake, tokens, moments, text):
         ((_, _, found, words),) = self.words(

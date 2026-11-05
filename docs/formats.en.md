@@ -1,6 +1,6 @@
 # Output formats
 
-The transcription result is saved in seven formats. All files are UTF-8 with `\n` line breaks. The speaker is "Канал N" (Channel N) for the channels of a stereo recording; if the channels are mixed into one (`--mono`, a mono recording or identical channels), there is no speaker.
+The transcription result is saved in seven formats. All files are UTF-8 with `\n` line breaks. The speaker is "Канал N" (Channel N) for the channels of a stereo recording and "Говорящий N" (Speaker N) with [speaker separation](transcribe.md#diarization); in a mixed recording (`--mono`, a mono recording or identical channels) without separation there is no speaker.
 
 | Format | Used for |
 | :----- | :------- |
@@ -26,7 +26,7 @@ The examples below are the result of `stt-ru transcribe call.wav` for a stereo r
 
 ## JSON { #json }
 
-An object with the fields `source` (file name), `model`, `duration` (recording duration, s), `channels` (number of recognized channels) and `segments`. A segment has `start` and `end` in seconds, `channel`, `speaker` and `text`; for mixed channels `channel` and `speaker` are `null`.
+An object with the fields `source` (file name), `model`, `duration` (recording duration, s), `channels` (number of recognized channels) and `segments`. A segment has `start` and `end` in seconds, `channel`, `speaker_id` (speaker number with separation), `speaker` and `text`; for mixed channels `channel` is `null`, and without speaker separation `speaker_id` and `speaker` are `null` too.
 
 ``` json
 {
@@ -54,8 +54,6 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
   ]
 }
 ```
-
-`speaker_id` is the speaker number with [speaker separation](transcribe.md#diarization), and `speaker` is then «Говорящий N»; otherwise `null`.
 
 ## JSON Lines { #jsonl }
 

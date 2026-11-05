@@ -76,7 +76,7 @@ def to_json(transcript: Transcript) -> str:
 
     Вывод:
         str: Объект с полями source, model, duration, channels и segments; у фрагмента -
-            start и end в секундах, channel, speaker и text
+            start и end в секундах, channel, speaker_id, speaker и text
 
     Пример использования:
         >>> from stt_ru import Segment, Transcript
@@ -122,7 +122,7 @@ def to_jsonl(transcript: Transcript) -> str:
         transcript (Transcript): Результат распознавания
 
     Вывод:
-        str: Объекты с полями source, start, end, channel, speaker и text по строкам
+        str: Объекты с полями source, start, end, channel, speaker_id, speaker и text по строкам
 
     Пример использования:
         >>> from stt_ru import Segment, Transcript

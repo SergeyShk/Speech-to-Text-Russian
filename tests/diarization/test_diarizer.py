@@ -176,6 +176,15 @@ def test_empty_resampled(embedder):
     assert Diarizer().diarize(np.zeros(0, dtype=np.float32), 8000) == []
 
 
+@pytest.mark.parametrize(
+    "samples",
+    [np.zeros(16000, dtype=np.float64), np.zeros((16000, 2), dtype=np.float32)],
+)
+def test_wrong_array(embedder, samples):
+    with pytest.raises(AudioError, match="одномерным массивом float32"):
+        Diarizer().diarize(samples, RATE)
+
+
 def test_unknown_rate(embedder):
     with pytest.raises(AudioError, match="Частота 7000 Гц"):
         Diarizer().diarize(signal((0.5, 1)), 7000)

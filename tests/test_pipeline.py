@@ -404,11 +404,15 @@ class TestDiarization:
 
     def test_different_channels_kept(self, diarizing):
         audio = Audio(stereo(), 8000)
-        with pytest.warns(UserWarning, match="Каналы записи разные"):
-            transcript = Transcriber(diarize=True).transcribe_audio(audio)
+        with pytest.warns(UserWarning, match="^звонок.wav: каналы разные"):
+            transcript = Transcriber(diarize=True).transcribe_audio(audio, "звонок.wav")
         assert {segment.channel for segment in transcript.segments} == {0, 1}
         assert {segment.speaker_id for segment in transcript.segments} == {None}
         assert diarizing[0].calls == []
+
+    def test_different_channels_without_name(self, diarizing):
+        with pytest.warns(UserWarning, match="^Запись: каналы разные"):
+            Transcriber(diarize=True).transcribe_audio(Audio(stereo(), 8000))
 
     def test_mixed_channels_diarized(self, diarizing):
         audio = Audio(stereo(), 8000)

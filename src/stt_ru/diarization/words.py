@@ -52,7 +52,7 @@ class Timeline:
         high = bisect_left(self._starts, end)
         spoken: defaultdict[int, float] = defaultdict(float)
         for turn in self.turns[low:high]:
-            spoken[turn.speaker] += min(end, turn.end) - max(start, turn.start)
+            spoken[turn.speaker] += max(min(end, turn.end) - max(start, turn.start), 0)
         if spoken:
             return max(spoken, key=lambda speaker: spoken[speaker])
         before = self.turns[self._latest[low - 1]] if low else None

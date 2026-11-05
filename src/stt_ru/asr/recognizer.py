@@ -220,22 +220,21 @@ class Recognizer:
 def _words(segment: TimestampedSegmentResult) -> list[Word] | None:
     if not segment.tokens or not segment.timestamps:
         return None
-    moments: list[float] = []
-    words: list[str] = []
-    fresh = True
-    for token, moment in zip(segment.tokens, segment.timestamps, strict=True):
-        if not token.strip():
-            fresh = True
-            continue
-        if fresh or token[0].isspace():
-            words.append(token.strip())
-            moments.append(segment.start + moment)
-        else:
-            words[-1] += token.rstrip()
-        fresh = token[-1].isspace()
-    # Некоторые модели собирают текст из токенов иначе: такие времена к тексту не привязать
-    if " ".join(words) != " ".join(segment.text.split()):
+    letters = [
+        (letter, moment)
+        for token, moment in zip(segment.tokens, segment.timestamps, strict=True)
+        for letter in token
+        if not letter.isspace()
+    ]
+    # onnx-asr убирает пробел перед знаками препинания: границы слов берутся из текста
+    words = segment.text.split()
+    if not words or "".join(letter for letter, _ in letters) != "".join(words):
         return None
+    moments = []
+    position = 0
+    for word in words:
+        moments.append(segment.start + letters[position][1])
+        position += len(word)
     ends = [*moments[1:], segment.end]
     return [
         (min(begin, segment.end), min(finish, segment.end), word)
