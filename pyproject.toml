@@ -44,7 +44,7 @@ dependencies = [
 [project.optional-dependencies]
 eval = ["jiwer>=3.0.3"]
 ffmpeg = ["imageio-ffmpeg>=0.6"]
-service = ["fastapi>=0.115", "python-multipart>=0.0.33", "starlette>=0.39", "uvicorn>=0.30"]
+service = ["fastapi>=0.124", "python-multipart>=0.0.33", "starlette>=0.39", "uvicorn>=0.30"]
 
 [project.scripts]
 stt-ru = "stt_ru.cli:main"
@@ -73,7 +73,7 @@ explicit = true
 
 [dependency-groups]
 test = [
-    "fastapi>=0.115",
+    "fastapi>=0.124",
     "httpx>=0.27",
     "imageio-ffmpeg>=0.6",
     "jiwer>=3.0.3",

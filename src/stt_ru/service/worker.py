@@ -13,7 +13,7 @@ from pathlib import Path, PureWindowsPath
 from typing import IO, BinaryIO, Literal
 
 from ..batch import Log, ignore
-from ..exceptions import ParameterError, SttRuError
+from ..exceptions import ModelError, ParameterError, SttRuError
 from ..pipeline import Transcriber
 from ..result import Transcript
 
@@ -341,10 +341,14 @@ class JobQueue:
             # Клиенту не нужен путь к файлу на сервере
             for path in (str(job.path.resolve()), str(job.path)):
                 text = text.replace(path, job.filename)
+            # В тексте ошибки загрузки может быть путь к кэшу моделей: его видит только журнал
+            logged = text
+            if isinstance(error, ModelError):
+                text = "Не удалось загрузить модели"
             with self._lock:
                 job.error, job.finished = text, self.clock()
                 job.status = "failed"
-            self._say(f"[{job.id}] {job.filename}: ошибка - {job.error}", self.errors)
+            self._say(f"[{job.id}] {job.filename}: ошибка - {logged}", self.errors)
         else:
             with self._lock:
                 job.transcript, job.finished = transcript, self.clock()

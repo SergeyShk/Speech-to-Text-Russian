@@ -13,7 +13,7 @@ from .asr import DEFAULT_MODEL, DEFAULT_QUANTIZATION, SAMPLE_RATES, Recognizer
 from .asr.recognizer import Word
 from .audio import Audio, load_audio
 from .audio.loader import Samples
-from .diarization import Diarizer, Timeline
+from .diarization import Diarizer, Timeline, check_speakers
 from .exceptions import ParameterError
 from .result import Segment, Transcript
 from .vad import VadOptions
@@ -65,7 +65,7 @@ class Transcriber:
 
     Исключения:
         ModelError: Если модель не загружается
-        ParameterError: Если speakers меньше единицы
+        ParameterError: Если speakers не от 1 до MAX_SPEAKERS
 
     Пример использования:
         >>> from stt_ru import Transcriber
@@ -88,8 +88,7 @@ class Transcriber:
         diarize: bool = False,
         speakers: int | None = None,
     ) -> None:
-        if speakers is not None and speakers < 1:
-            raise ParameterError(f"Число говорящих должно быть положительным: {speakers}")
+        check_speakers(speakers)
         self.recognizer = Recognizer(
             model, quantization=quantization, model_dir=model_dir, providers=providers, vad=vad
         )
@@ -118,10 +117,9 @@ class Transcriber:
             tuple[bool, int | None]: Разделять ли говорящих и их точное число, если известно
 
         Исключения:
-            ParameterError: Если speakers меньше единицы или задан вместе с diarize=False
+            ParameterError: Если speakers не от 1 до MAX_SPEAKERS или задан вместе с diarize=False
         """
-        if speakers is not None and speakers < 1:
-            raise ParameterError(f"Число говорящих должно быть положительным: {speakers}")
+        check_speakers(speakers)
         if diarize is False:
             if speakers is not None:
                 raise ParameterError("Число говорящих задано, а разделение говорящих выключено")
@@ -154,6 +152,7 @@ class Transcriber:
             ModelError: Если не загружаются модели диаризации
             ParameterError: Если параметры говорящих неверны (см. speaker_options)
         """
+        self.speaker_options(diarize, speakers)
         audio = self.load(path)
         return self.transcribe_audio(
             audio, source=Path(path).name, diarize=diarize, speakers=speakers

@@ -1089,13 +1089,19 @@ class TestSpeakers:
         assert fake[0].kwargs["speakers"] == 3
 
     @pytest.mark.parametrize("command", ["transcribe", "serve"])
-    def test_wrong_speakers(self, fake, files, capsys, command):
+    @pytest.mark.parametrize("speakers", ["0", "101"])
+    def test_wrong_speakers(self, fake, files, capsys, command, speakers):
         paths = [str(files)] if command == "transcribe" else []
         with pytest.raises(SystemExit) as caught:
-            main([command, *paths, "--speakers", "0"])
+            main([command, *paths, "--speakers", speakers])
         assert caught.value.code == 2
-        assert "--speakers должно быть положительным числом: 0" in capsys.readouterr().err
+        assert f"Число говорящих должно быть от 1 до 100: {speakers}" in capsys.readouterr().err
         assert fake == []
+
+    def test_help_differs_for_service(self, capsys):
+        with pytest.raises(SystemExit):
+            main(["serve", "--help"])
+        assert "если задача не указала иное" in " ".join(capsys.readouterr().out.split())
 
     def test_not_for_evaluate(self, capsys):
         with pytest.raises(SystemExit):
