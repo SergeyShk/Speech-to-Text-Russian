@@ -17,7 +17,7 @@
 | `split_channels` | bool | `True` | Распознавать каналы отдельно; `False` - сводить в один |
 | `ffmpeg` | str | `None` | Путь к ffmpeg; `None` - поиск в `PATH` и в `imageio-ffmpeg` |
 | `diarize` | bool | `False` | [Разделять говорящих](transcribe.md#diarization) в записи с одной дорожкой |
-| `speakers` | int | `None` | Точное число говорящих, включает `diarize`; `None` - определяется по записи |
+| `speakers` | int | `None` | Точное число говорящих от 1 до 100, включает `diarize`; `None` - определяется по записи |
 
 | Метод | Описание |
 | :---- | :------- |

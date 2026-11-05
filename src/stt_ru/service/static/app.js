@@ -184,7 +184,8 @@ function speakerOptions() {
   const field = $("speakers");
   const speakers = field.value.trim();
   // При вводе вроде «2e» значение поля пусто, и задача тихо ушла бы с автоматическим числом
-  if (diarize && (field.validity.badInput || (speakers && !/^[1-9]\d*$/.test(speakers)))) return null;
+  const wrong = field.validity.badInput || (speakers && !/^[1-9]\d*$/.test(speakers));
+  if (diarize && (wrong || field.validity.rangeOverflow)) return null;
   return { diarize, speakers: diarize ? speakers : "" };
 }
 
@@ -195,7 +196,7 @@ async function upload(files) {
   // Значения читаются один раз: поле можно менять, пока загружаются уже выбранные файлы
   const options = speakerOptions();
   if (!options) {
-    showUploadErrors(["Число говорящих должно быть целым и положительным"]);
+    showUploadErrors([`Число говорящих должно быть целым, от 1 до ${state.info.max_speakers}`]);
     return;
   }
   for (const file of files) await uploadOne(file, errors, options);
@@ -554,6 +555,7 @@ async function init() {
   $("diarize").checked = state.info.diarize;
   $("speakers").value = state.info.speakers ?? "";
   $("speakers").placeholder = state.info.speakers ?? "авто";
+  $("speakers").max = state.info.max_speakers;
   $("speakers-field").hidden = !state.info.diarize;
   if (state.info.auth && !state.info.authorized) showToken();
   else start();

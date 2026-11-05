@@ -17,7 +17,7 @@
 | `split_channels` | bool | `True` | Recognize channels separately; `False` - mix them into one |
 | `ffmpeg` | str | `None` | Path to ffmpeg; `None` - search in `PATH` and `imageio-ffmpeg` |
 | `diarize` | bool | `False` | [Separate speakers](transcribe.md#diarization) in a single-track recording |
-| `speakers` | int | `None` | Exact number of speakers, turns on `diarize`; `None` - detected from the recording |
+| `speakers` | int | `None` | Exact number of speakers from 1 to 100, turns on `diarize`; `None` - detected from the recording |
 
 | Method | Description |
 | :----- | :---------- |

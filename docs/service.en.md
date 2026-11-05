@@ -39,9 +39,9 @@ Jobs are visible in the browser they were uploaded from: their list is kept in t
 | `--data-dir` | the system temporary folder | Folder for uploaded and temporary files |
 | `--diarize` | off | [Separate speakers](transcribe.md#diarization) unless a job says otherwise; the models are loaded at startup |
 | `--speakers` | - | Exact number of speakers from 1 to 100 unless a job says otherwise; turns on `--diarize` |
+| `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 Without `--diarize`, speaker separation is available too: the first such job loads the [models](models.md#diarization), downloading them if needed, and fails without network and cache.
-| `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 The model and speech detection parameters are on the [Models](models.md#options) page. The address and parameters are checked before the model is loaded: a busy port gives a message and exit code 1.
 
@@ -72,10 +72,10 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/jobs/{id}/waveform` | Waveform peaks per channel |
 | `GET /v1/jobs/{id}/audio` | The uploaded file, with seeking support (`Range`): audio and video for the player, anything else as an attachment |
 | `DELETE /v1/jobs/{id}` | Deletes the job and its files |
-| `GET /v1/info` | Version, model, limits, formats, whether a token is required, default speaker separation |
+| `GET /v1/info` | Version, model, limits, formats, whether a token is required, default speaker separation and the largest number of speakers |
 | `GET /healthz` | Health check: `{"status": "ok"}` |
 
-A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments), `diarize` and `speakers` (speaker separation of this job) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.
+A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments), `diarize` and `speakers` (speaker separation of this job) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.
 
 ``` bash
 token="Authorization: Bearer my-secret-token"

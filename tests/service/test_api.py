@@ -80,6 +80,7 @@ class TestPage:
             "formats": ["txt", "json", "jsonl", "srt", "vtt", "ass", "csv"],
             "diarize": False,
             "speakers": None,
+            "max_speakers": 100,
         }
 
     def test_info_speakers(self, client, transcriber):
