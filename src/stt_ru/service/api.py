@@ -92,6 +92,7 @@ class ServiceInfo(BaseModel):
     formats: list[str] = Field(description="Форматы результата")
     diarize: bool = Field(description="Разделять ли говорящих, если задача не указала")
     speakers: int | None = Field(description="Число говорящих, если задача не указала")
+    max_speakers: int = Field(description="Наибольшее число говорящих в задаче")
 
 
 class Waveform(BaseModel):
@@ -245,6 +246,7 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
         formats=list(FORMATS),
         diarize=diarize,
         speakers=speakers,
+        max_speakers=MAX_SPEAKERS,
     )
 
 
@@ -306,7 +308,10 @@ def get_job(job_id: str, settings: Settings) -> JobInfo:
     summary="Результат распознавания",
     dependencies=protected,
     response_class=Response,
-    responses={409: {"description": "Задача не готова или закончилась ошибкой"}},
+    responses={
+        400: {"description": "Неизвестный формат"},
+        409: {"description": "Задача не готова или закончилась ошибкой"},
+    },
 )
 def get_result(
     job_id: str,

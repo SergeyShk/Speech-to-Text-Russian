@@ -1,6 +1,7 @@
 """У каждой русской страницы документации есть английская с теми же заголовками, якорями и ссылками"""
 
 import re
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,15 @@ def test_english_page(page):
     assert anchors(english_text) == anchors(russian_text)
     assert links(english_text) == links(russian_text)
     assert russian_text.count("\n## ") == english_text.count("\n## ")
+
+
+@pytest.mark.parametrize("page", sorted(DOCS.rglob("*.md")), ids=lambda page: page.name)
+def test_tables_not_broken(page):
+    # mkdocs --strict не замечает строку таблицы, которая стала продолжением абзаца
+    lines = page.read_text(encoding="utf-8").splitlines()
+    for before, line in pairwise(lines):
+        if line.startswith("|"):
+            assert not before.strip() or before.startswith("|"), line
 
 
 def test_no_orphan_english_pages():
