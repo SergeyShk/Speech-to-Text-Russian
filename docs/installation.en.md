@@ -1,6 +1,6 @@
 # Installation
 
-The library and the `stt-ru` command can be installed with `pip` or from the project repository with `git`. The ready-made Docker image is described on the [Docker](docker.md) page.
+The library and the `stt-ru` CLI can be installed with `pip` or from the project repository with `git`. The ready-made Docker image is described on the [Docker](docker.md) page.
 
 ## Dependencies
 

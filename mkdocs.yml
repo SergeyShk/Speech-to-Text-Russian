@@ -1,6 +1,6 @@
 site_name: stt-ru
 site_url: https://sergeyshk.github.io/Speech-to-Text-Russian/
-site_description: "Распознавание русской речи: библиотека Python, команда stt-ru, веб-сервис и Docker-образ"
+site_description: "Распознавание русской речи: библиотека Python, CLI stt-ru, веб-сервис и Docker-образ"
 repo_url: https://github.com/SergeyShk/Speech-to-Text-Russian
 
 nav:
@@ -47,7 +47,7 @@ plugins:
         - locale: en
           name: English
           build: true
-          site_description: "Russian speech recognition: Python library, command line tool, web service and Docker image"
+          site_description: "Russian speech recognition: Python library, CLI, web service and Docker image"
           nav_translations:
             Главная: Home
             О проекте: About
