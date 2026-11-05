@@ -725,6 +725,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Разделение говорящих
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#export" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -958,6 +969,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Разделение говорящих
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#export" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1068,6 +1090,18 @@
 <td style="text-align: left;"><code>None</code></td>
 <td style="text-align: left;">Путь к ffmpeg; <code>None</code> - поиск в <code>PATH</code> и в <code>imageio-ffmpeg</code></td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>diarize</code></td>
+<td style="text-align: left;">bool</td>
+<td style="text-align: left;"><code>False</code></td>
+<td style="text-align: left;"><a href="../transcribe/#diarization">Разделять говорящих</a> в записи с одной дорожкой</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>speakers</code></td>
+<td style="text-align: left;">int</td>
+<td style="text-align: left;"><code>None</code></td>
+<td style="text-align: left;">Точное число говорящих, включает <code>diarize</code>; <code>None</code> - определяется по записи</td>
+</tr>
 </tbody>
 </table>
 <table>
@@ -1153,7 +1187,37 @@
 </tbody>
 </table>
 <p><code>save(path, fmt=None)</code> сохраняет результат в <a href="../formats/">формате</a> по расширению файла или из <code>fmt</code>.</p>
-<p><code>Segment</code> - фрагмент речи: <code>start</code> и <code>end</code> в секундах, <code>text</code>, <code>channel</code> (номер канала с нуля; <code>None</code> - каналы сведены), <code>speaker</code> («Канал N» или <code>None</code>) и <code>duration</code>.</p>
+<p><code>Segment</code> - фрагмент речи: <code>start</code> и <code>end</code> в секундах, <code>text</code>, <code>channel</code> (номер канала с нуля; <code>None</code> - каналы сведены), <code>speaker_id</code> (номер говорящего при диаризации, с единицы), <code>speaker</code> («Говорящий N», «Канал N» или <code>None</code>) и <code>duration</code>.</p>
+<h2 id="diarization">Разделение говорящих<a class="headerlink" href="#diarization" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p><strong>stt_ru.diarization.Diarizer</strong>, <strong>stt_ru.diarization.Turn</strong></p>
+</div>
+<p><code>Diarizer</code> находит реплики без распознавания. Обычно он не нужен отдельно: <code>Transcriber(diarize=True)</code> подписывает фрагменты сам.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Параметр</th>
+<th style="text-align: left;">Тип</th>
+<th style="text-align: left;">По умолчанию</th>
+<th style="text-align: left;">Описание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>threshold</code></td>
+<td style="text-align: left;">float</td>
+<td style="text-align: left;"><code>0.7</code></td>
+<td style="text-align: left;">Порог сведения голосов: чем больше, тем меньше говорящих</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>providers</code></td>
+<td style="text-align: left;">list[str]</td>
+<td style="text-align: left;"><code>None</code></td>
+<td style="text-align: left;">Провайдеры ONNX Runtime; <code>None</code> - как у <code>Transcriber</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>diarize(samples, sample_rate, speakers=None)</code> принимает одномерный массив отсчетов float32 и возвращает список <code>Turn</code> по времени начала: <code>start</code> и <code>end</code> в секундах, <code>speaker</code> - номер с единицы. Реплики разных людей могут перекрываться.</p>
 <h2 id="export">Экспорт<a class="headerlink" href="#export" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.export</strong></p>

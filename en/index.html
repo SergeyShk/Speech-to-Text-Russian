@@ -992,6 +992,7 @@
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <ul>
 <li>transcribe <a href="transcribe/">files and folders</a> from the command line: text to the console or the results of every file to a folder, one summary file for a whole batch, monitoring a folder for new recordings</li>
+<li><a href="transcribe/#diarization">separate speakers</a> in a single-track recording</li>
 <li>save the result in the <a href="formats/">formats</a> TXT, JSON, JSONL, SRT, VTT, ASS and CSV</li>
 <li>transcribe recordings from files and from memory in a <a href="python/">Python program</a></li>
 <li>choose the onnx-asr <a href="models/">model</a>, the device and the speech detection parameters</li>
@@ -1029,6 +1030,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <li>The file is read entirely: WAV, FLAC, OGG, MP3 and other uncompressed formats by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.</li>
 <li>The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Channels that differ only in loudness and a small delay are recognized once.</li>
 <li><a href="models/#vad">Silero VAD</a> speech detection cuts the recording into speech segments of at most 20 s, and the model recognizes each segment.</li>
+<li>With <code>--diarize</code>, a single-track recording is split into speaker turns and segments are labeled «Говорящий N».</li>
 <li>The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.</li>
 </ol>
 <div class="admonition note">

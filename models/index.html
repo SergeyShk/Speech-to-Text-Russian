@@ -816,6 +816,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Разделение говорящих
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vad" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -997,6 +1008,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Разделение говорящих
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vad" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1131,6 +1153,29 @@
 <p><code>--model-dir</code> (аргумент <code>model_dir</code>) берет файлы модели распознавания из каталога: например, модель, скачанную вручную. Если каталога нет, модель скачивается в него. Silero VAD при этом берется из кэша Hugging Face, поэтому на компьютере без интернета проще скопировать кэш целиком и указать его в <code>HF_HOME</code> (см. <a href="../installation/#models">Установка</a>).</p>
 <div class="highlight"><pre><span></span><code>stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span class="w"> </span>-m<span class="w"> </span>gigaam-v3-e2e-rnnt<span class="w"> </span>--model-dir<span class="w"> </span>/models/gigaam-v3-e2e-rnnt
 </code></pre></div>
+<h2 id="diarization">Разделение говорящих<a class="headerlink" href="#diarization" title="Permanent link">&para;</a></h2>
+<p>С <a href="../transcribe/#diarization"><code>--diarize</code></a> работают еще две модели. При первом запуске они скачиваются в кэш Hugging Face (вместе около 35 МБ), <code>--model-dir</code> к ним не относится.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Модель</th>
+<th style="text-align: left;">Что делает</th>
+<th style="text-align: left;">Лицензия</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><a href="https://huggingface.co/onnx-community/pyannote-segmentation-3.0">pyannote segmentation 3.0</a></td>
+<td style="text-align: left;">Находит, кто говорит, в окнах по 10 с</td>
+<td style="text-align: left;">MIT</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM">CAM++ из WeSpeaker</a></td>
+<td style="text-align: left;">Считает голосовой отпечаток, чтобы свести реплики одного человека</td>
+<td style="text-align: left;">Apache-2.0</td>
+</tr>
+</tbody>
+</table>
 <h2 id="vad">Поиск речи<a class="headerlink" href="#vad" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.vad.VadOptions</strong></p>

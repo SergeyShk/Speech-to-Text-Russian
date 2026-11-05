@@ -719,6 +719,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#delete-source" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1002,6 +1013,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#delete-source" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1143,6 +1165,16 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span clas
 <td style="text-align: left;">How many seconds a file must stay unchanged to be taken</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>--diarize</code></td>
+<td style="text-align: left;">off</td>
+<td style="text-align: left;"><a href="#diarization">Separate speakers</a> in a single-track recording</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--speakers</code></td>
+<td style="text-align: left;">-</td>
+<td style="text-align: left;">Exact number of speakers in every recording, turns on <code>--diarize</code></td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>-q</code>, <code>--quiet</code></td>
 <td style="text-align: left;">off</td>
 <td style="text-align: left;">Do not print progress; errors are always printed</td>
@@ -1150,6 +1182,17 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span clas
 </tbody>
 </table>
 <p>The model, device and speech detection parameters (<code>-m</code>, <code>--quantization</code>, <code>--model-dir</code>, <code>--device</code>, <code>--mono</code>, <code>--ffmpeg</code>, <code>--vad-*</code>) are shared by all commands and described on the <a href="../models/#options">Models</a> page. All parameters and files are checked before the model is loaded, including that the output folder and the summary file can be written and the folders given as arguments can be read. An unreadable subfolder is skipped with a message, and the exit code is then 1. If there are no files, the model is not loaded.</p>
+<h2 id="diarization">Speaker separation<a class="headerlink" href="#diarization" title="Permanent link">&para;</a></h2>
+<p>In a single-track recording, <code>--diarize</code> labels segments «Говорящий 1», «Говорящий 2» in order of appearance. A segment where two people speak is split between them by words.</p>
+<div class="highlight"><pre><span></span><code>stt-ru<span class="w"> </span>transcribe<span class="w"> </span>meeting.mp3<span class="w"> </span>--diarize
+stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span class="w"> </span>--mono<span class="w"> </span>--speakers<span class="w"> </span><span class="m">2</span><span class="w">    </span><span class="c1"># channels mixed, exactly two speakers</span>
+</code></pre></div>
+<ul>
+<li>If the number of speakers is known, pass it in <code>--speakers</code>: this prevents extra speakers and keeps similar voices apart.</li>
+<li>Different channels of a stereo recording already separate speakers: for them <code>--diarize</code> only prints a warning. To separate speakers in a mixed recording, use <code>--mono</code>.</li>
+<li>Models without word times (Whisper) give a whole segment to whoever speaks longest in it.</li>
+<li>Transcription with <code>--diarize</code> takes about one and a half to two times longer. The models it needs are on the <a href="../models/#diarization">Models</a> page.</li>
+</ul>
 <h2 id="delete-source">Deleting sources<a class="headerlink" href="#delete-source" title="Permanent link">&para;</a></h2>
 <p><code>--delete-source</code> deletes a file after all its results and summary rows are written. It needs <code>--output-dir</code> or <code>--summary</code>, so that the result is not lost. A file that already has results is not deleted: it may be another recording with the same name. A file that changed while it was being transcribed (it is still being copied) is not deleted either. A failed deletion or a changed file is an error of that file.</p>
 <h2 id="watch">Folder monitoring<a class="headerlink" href="#watch" title="Permanent link">&para;</a></h2>

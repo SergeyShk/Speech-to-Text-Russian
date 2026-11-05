@@ -816,6 +816,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vad" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -997,6 +1008,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vad" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1131,6 +1153,29 @@
 <p><code>--model-dir</code> (the <code>model_dir</code> argument) takes the recognition model files from a folder: for example, a model downloaded by hand. If the folder does not exist, the model is downloaded into it. Silero VAD is still taken from the Hugging Face cache, so on a computer without internet it is simpler to copy the whole cache and point <code>HF_HOME</code> to it (see <a href="../installation/#models">Installation</a>).</p>
 <div class="highlight"><pre><span></span><code>stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span class="w"> </span>-m<span class="w"> </span>gigaam-v3-e2e-rnnt<span class="w"> </span>--model-dir<span class="w"> </span>/models/gigaam-v3-e2e-rnnt
 </code></pre></div>
+<h2 id="diarization">Speaker separation<a class="headerlink" href="#diarization" title="Permanent link">&para;</a></h2>
+<p><a href="../transcribe/#diarization"><code>--diarize</code></a> uses two more models. On the first run they are downloaded to the Hugging Face cache (about 35 MB together); <code>--model-dir</code> does not apply to them.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Model</th>
+<th style="text-align: left;">What it does</th>
+<th style="text-align: left;">License</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><a href="https://huggingface.co/onnx-community/pyannote-segmentation-3.0">pyannote segmentation 3.0</a></td>
+<td style="text-align: left;">Finds who is speaking in 10 s windows</td>
+<td style="text-align: left;">MIT</td>
+</tr>
+<tr>
+<td style="text-align: left;"><a href="https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM">CAM++ from WeSpeaker</a></td>
+<td style="text-align: left;">Computes a voiceprint to join the turns of one person</td>
+<td style="text-align: left;">Apache-2.0</td>
+</tr>
+</tbody>
+</table>
 <h2 id="vad">Speech detection<a class="headerlink" href="#vad" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.vad.VadOptions</strong></p>

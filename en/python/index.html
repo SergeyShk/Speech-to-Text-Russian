@@ -725,6 +725,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#export" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -958,6 +969,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#export" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1068,6 +1090,18 @@
 <td style="text-align: left;"><code>None</code></td>
 <td style="text-align: left;">Path to ffmpeg; <code>None</code> - search in <code>PATH</code> and <code>imageio-ffmpeg</code></td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>diarize</code></td>
+<td style="text-align: left;">bool</td>
+<td style="text-align: left;"><code>False</code></td>
+<td style="text-align: left;"><a href="../transcribe/#diarization">Separate speakers</a> in a single-track recording</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>speakers</code></td>
+<td style="text-align: left;">int</td>
+<td style="text-align: left;"><code>None</code></td>
+<td style="text-align: left;">Exact number of speakers, turns on <code>diarize</code>; <code>None</code> - detected from the recording</td>
+</tr>
 </tbody>
 </table>
 <table>
@@ -1153,7 +1187,37 @@
 </tbody>
 </table>
 <p><code>save(path, fmt=None)</code> saves the result in the <a href="../formats/">format</a> given by the file extension or <code>fmt</code>.</p>
-<p><code>Segment</code> is a speech segment: <code>start</code> and <code>end</code> in seconds, <code>text</code>, <code>channel</code> (channel number from zero; <code>None</code> - channels are mixed), <code>speaker</code> ("Канал N" or <code>None</code>) and <code>duration</code>.</p>
+<p><code>Segment</code> is a speech segment: <code>start</code> and <code>end</code> in seconds, <code>text</code>, <code>channel</code> (channel number from zero; <code>None</code> - channels are mixed), <code>speaker_id</code> (speaker number with diarization, from one), <code>speaker</code> («Говорящий N», «Канал N» or <code>None</code>) and <code>duration</code>.</p>
+<h2 id="diarization">Speaker separation<a class="headerlink" href="#diarization" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p><strong>stt_ru.diarization.Diarizer</strong>, <strong>stt_ru.diarization.Turn</strong></p>
+</div>
+<p><code>Diarizer</code> finds speaker turns without recognition. It is rarely needed on its own: <code>Transcriber(diarize=True)</code> labels segments by itself.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>threshold</code></td>
+<td style="text-align: left;">float</td>
+<td style="text-align: left;"><code>0.7</code></td>
+<td style="text-align: left;">Voice merging threshold: the higher it is, the fewer speakers</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>providers</code></td>
+<td style="text-align: left;">list[str]</td>
+<td style="text-align: left;"><code>None</code></td>
+<td style="text-align: left;">ONNX Runtime providers; <code>None</code> - the same as for <code>Transcriber</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>diarize(samples, sample_rate, speakers=None)</code> takes a one-dimensional float32 sample array and returns a list of <code>Turn</code> ordered by start time: <code>start</code> and <code>end</code> in seconds, <code>speaker</code> - a number from one. Turns of different people can overlap.</p>
 <h2 id="export">Export<a class="headerlink" href="#export" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.export</strong></p>
