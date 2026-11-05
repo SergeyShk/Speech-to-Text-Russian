@@ -1226,7 +1226,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>diarize(samples, sample_rate, speakers=None)</code> принимает одномерный массив отсчетов float32 и возвращает список <code>Turn</code> по времени начала: <code>start</code> и <code>end</code> в секундах, <code>speaker</code> - номер с единицы. Реплики разных людей могут перекрываться.</p>
+<p><code>diarize(samples, sample_rate, speakers=None)</code> принимает одномерный массив отсчетов float32 и возвращает список <code>Turn</code> по времени начала: <code>start</code> и <code>end</code> в секундах, <code>speaker</code> - номер с единицы. Реплики разных людей могут перекрываться. Чтобы распознавание работало со своим порогом, задайте <code>transcriber.diarizer = Diarizer(threshold=0.9)</code> и вызывайте его с <code>diarize=True</code>.</p>
 <h2 id="export">Экспорт<a class="headerlink" href="#export" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.export</strong></p>

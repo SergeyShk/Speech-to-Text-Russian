@@ -617,6 +617,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#speaker-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#running-locally" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1002,6 +1013,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#speaker-separation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speaker separation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#running-locally" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1049,6 +1071,9 @@
 <h2 id="web-service-and-rest-api-from-python">Web service and REST API from Python<a class="headerlink" href="#web-service-and-rest-api-from-python" title="Permanent link">&para;</a></h2>
 <p><a href="https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/05_web_service.ipynb"><img alt="Open in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a></p>
 <p><a href="https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/05_web_service.ipynb">05_web_service.ipynb</a> - <code>stt-ru serve</code> in the background with an access token and working with it through <code>httpx</code>: queueing a file and waiting for the result, the result in different formats, the waveform and the recording with seeking, error responses, deleting a job, a client for a batch of files, and running the same service in Docker.</p>
+<h2 id="speaker-separation">Speaker separation<a class="headerlink" href="#speaker-separation" title="Permanent link">&para;</a></h2>
+<p><a href="https://colab.research.google.com/github/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb"><img alt="Open in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a></p>
+<p><a href="https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/notebooks/06_speakers.ipynb">06_speakers.ipynb</a> - speaker separation in a single-track recording: the result and the conversation timeline, accuracy on dialogues with known references, the number of speakers and the threshold, a speaker change without a pause, a mixed call, the command and the service.</p>
 <h2 id="running-locally">Running locally<a class="headerlink" href="#running-locally" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w"> </span>--group<span class="w"> </span>notebooks
 uv<span class="w"> </span>run<span class="w"> </span>jupyter<span class="w"> </span>lab<span class="w"> </span>notebooks/

@@ -1226,7 +1226,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>diarize(samples, sample_rate, speakers=None)</code> takes a one-dimensional float32 sample array and returns a list of <code>Turn</code> ordered by start time: <code>start</code> and <code>end</code> in seconds, <code>speaker</code> - a number from one. Turns of different people can overlap.</p>
+<p><code>diarize(samples, sample_rate, speakers=None)</code> takes a one-dimensional float32 sample array and returns a list of <code>Turn</code> ordered by start time: <code>start</code> and <code>end</code> in seconds, <code>speaker</code> - a number from one. Turns of different people can overlap. To recognize with your own threshold, set <code>transcriber.diarizer = Diarizer(threshold=0.9)</code> and call it with <code>diarize=True</code>.</p>
 <h2 id="export">Export<a class="headerlink" href="#export" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.export</strong></p>
