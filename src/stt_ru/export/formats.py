@@ -39,6 +39,7 @@ def _segment(segment: Segment) -> dict[str, Any]:
         "start": segment.start,
         "end": segment.end,
         "channel": segment.channel,
+        "speaker_id": segment.speaker_id,
         "speaker": segment.speaker,
         "text": segment.text,
     }
@@ -46,7 +47,7 @@ def _segment(segment: Segment) -> dict[str, Any]:
 
 def to_txt(transcript: Transcript) -> str:
     """
-    Текст: фрагмент на строку, у каналов записи - с говорящим
+    Текст: фрагмент на строку, с говорящим, если он известен
 
     Аргументы:
         transcript (Transcript): Результат распознавания
@@ -75,7 +76,7 @@ def to_json(transcript: Transcript) -> str:
 
     Вывод:
         str: Объект с полями source, model, duration, channels и segments; у фрагмента -
-            start и end в секундах, channel, speaker и text
+            start и end в секундах, channel, speaker_id, speaker и text
 
     Пример использования:
         >>> from stt_ru import Segment, Transcript
@@ -92,6 +93,7 @@ def to_json(transcript: Transcript) -> str:
               "start": 0.5,
               "end": 1.2,
               "channel": 0,
+              "speaker_id": null,
               "speaker": "Канал 0",
               "text": "Алло."
             }
@@ -120,14 +122,14 @@ def to_jsonl(transcript: Transcript) -> str:
         transcript (Transcript): Результат распознавания
 
     Вывод:
-        str: Объекты с полями source, start, end, channel, speaker и text по строкам
+        str: Объекты с полями source, start, end, channel, speaker_id, speaker и text по строкам
 
     Пример использования:
         >>> from stt_ru import Segment, Transcript
         >>> from stt_ru.export import to_jsonl
         >>> transcript = Transcript((Segment(0.5, 1.2, "Алло.", 0),), 3.0, 2, "m", "call.wav")
         >>> print(to_jsonl(transcript), end="")
-        {"source": "call.wav", "start": 0.5, "end": 1.2, "channel": 0, "speaker": "Канал 0", "text": "Алло."}
+        {"source": "call.wav", "start": 0.5, "end": 1.2, "channel": 0, "speaker_id": null, "speaker": "Канал 0", "text": "Алло."}
     """
     return "".join(
         json.dumps({"source": transcript.source, **_segment(segment)}, ensure_ascii=False) + "\n"

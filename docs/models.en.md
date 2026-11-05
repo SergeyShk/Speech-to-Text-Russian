@@ -51,6 +51,15 @@ int8 weights are about four times smaller than the original ones and usually fas
 stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e2e-rnnt
 ```
 
+## Speaker separation { #diarization }
+
+[`--diarize`](transcribe.md#diarization) uses two more models. On the first run they are downloaded to the Hugging Face cache (about 35 MB together); `--model-dir` does not apply to them.
+
+| Model | What it does | License |
+| :---- | :----------- | :------ |
+| [pyannote segmentation 3.0](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) | Finds who is speaking in 10 s windows | MIT |
+| [CAM++ from WeSpeaker](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM) | Computes a voiceprint to join the turns of one person | Apache-2.0 |
+
 ## Speech detection { #vad }
 
 !!! info ""

@@ -45,7 +45,7 @@ RUN python -c "import onnxruntime as ort; assert 'CUDAExecutionProvider' in ort.
 USER stt
 # Модель загружается на CPU: при сборке GPU нет
 RUN if [ -n "$MODEL" ]; then \
-        python -c "import sys; from stt_ru import Transcriber; Transcriber(sys.argv[1], providers=['CPUExecutionProvider'])" "$MODEL"; \
+        python -c "import sys; from stt_ru import Transcriber; Transcriber(sys.argv[1], providers=['CPUExecutionProvider'], diarize=True)" "$MODEL"; \
     fi
 WORKDIR /data
 EXPOSE 8000

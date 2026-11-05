@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from onnx_asr.utils import ModelFileNotFoundError, ModelNotSupportedError
-from onnx_asr.vad import SegmentResult
+from onnx_asr.vad import SegmentResult, TimestampedSegmentResult
 
 from stt_ru.asr import DEFAULT_MODEL, DEFAULT_QUANTIZATION, SAMPLE_RATES, Recognizer, recognizer
 from stt_ru.exceptions import AudioError, ModelError
@@ -13,11 +13,17 @@ class FakeAdapter:
         self.vad = None
         self.vad_options = None
         self.calls = []
+        self.timed = []
 
     def with_vad(self, vad, **options):
         self.vad = vad
         self.vad_options = options
         return self
+
+    def with_timestamps(self):
+        adapter = FakeAdapter()
+        adapter.recognize = lambda waveforms, *, sample_rate: [iter(self.timed) for _ in waveforms]
+        return adapter
 
     def recognize(self, waveforms, *, sample_rate):
         self.calls.append((waveforms, sample_rate))
@@ -249,3 +255,60 @@ def test_vad_load_error(fake, monkeypatch):
     monkeypatch.setattr(recognizer.onnx_asr, "load_vad", load_vad)
     with pytest.raises(ModelError, match="нет сети"):
         Recognizer()
+
+
+def timed(tokens, moments, text=None, start=1.0, end=3.0):
+    text = "".join(tokens).strip() if text is None else text
+    return TimestampedSegmentResult(start, end, text, moments, tokens)
+
+
+class TestWords:
+    def words(self, fake, *segments):
+        adapter, _ = fake
+        adapter.timed = list(segments)
+        return Recognizer().recognize_words([np.zeros(8000, dtype=np.float32)], 8000)[0]
+
+    def test_tokens_grouped(self, fake):
+        tokens = [" На", "та", "лья", ",", " бла", "го", " ", "дарю"]
+        moments = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+        ((start, end, text, words),) = self.words(
+            fake, timed(tokens, moments, "Наталья, благо дарю")
+        )
+        assert (start, end, text) == (1.0, 3.0, "Наталья, благо дарю")
+        assert words == [(1.0, 1.4, "Наталья,"), (1.4, 1.7, "благо"), (1.7, 3.0, "дарю")]
+
+    def test_space_before_sign_removed_from_text(self, fake):
+        tokens = [" Он", " —", " вр", "ач."]
+        ((_, _, text, words),) = self.words(fake, timed(tokens, [0.0, 0.5, 1.0, 1.5], "Он— врач."))
+        assert text == "Он— врач."
+        assert words == [(1.0, 2.0, "Он—"), (2.0, 3.0, "врач.")]
+
+    def test_space_tokens(self, fake):
+        ((_, _, _, words),) = self.words(
+            fake, timed(["да", " ", "нет", " "], [0.0, 0.5, 1.0, 1.5], "да нет")
+        )
+        assert words == [(1.0, 2.0, "да"), (2.0, 3.0, "нет")]
+
+    def test_clipped_to_fragment(self, fake):
+        ((_, _, _, words),) = self.words(fake, timed([" да", " нет"], [0.0, 5.0], "да нет"))
+        assert words == [(1.0, 3.0, "да"), (3.0, 3.0, "нет")]
+
+    @pytest.mark.parametrize(
+        ("tokens", "moments", "text"),
+        [
+            (None, None, "да"),
+            ([" да"], None, "да"),
+            ([], [], "да"),
+            ([" да"], [0.0], "другое"),
+            ([" "], [0.0], ""),
+        ],
+    )
+    def test_without_times(self, fake, tokens, moments, text):
+        ((_, _, found, words),) = self.words(
+            fake, TimestampedSegmentResult(1.0, 3.0, text, moments, tokens)
+        )
+        assert (found, words) == (text, None)
+
+    def test_rate_checked(self, fake):
+        with pytest.raises(AudioError, match="Частота 7000 Гц"):
+            Recognizer().recognize_words([np.zeros(8000, dtype=np.float32)], 7000)

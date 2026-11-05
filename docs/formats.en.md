@@ -1,6 +1,6 @@
 # Output formats
 
-The transcription result is saved in seven formats. All files are UTF-8 with `\n` line breaks. The speaker is "Канал N" (Channel N) for the channels of a stereo recording; if the channels are mixed into one (`--mono`, a mono recording or identical channels), there is no speaker.
+The transcription result is saved in seven formats. All files are UTF-8 with `\n` line breaks. The speaker is "Канал N" (Channel N) for the channels of a stereo recording and "Говорящий N" (Speaker N) with [speaker separation](transcribe.md#diarization); in a mixed recording (`--mono`, a mono recording or identical channels) without separation there is no speaker.
 
 | Format | Used for |
 | :----- | :------- |
@@ -26,7 +26,7 @@ The examples below are the result of `stt-ru transcribe call.wav` for a stereo r
 
 ## JSON { #json }
 
-An object with the fields `source` (file name), `model`, `duration` (recording duration, s), `channels` (number of recognized channels) and `segments`. A segment has `start` and `end` in seconds, `channel`, `speaker` and `text`; for mixed channels `channel` and `speaker` are `null`.
+An object with the fields `source` (file name), `model`, `duration` (recording duration, s), `channels` (number of recognized channels) and `segments`. A segment has `start` and `end` in seconds, `channel`, `speaker_id` (speaker number with separation), `speaker` and `text`; `speaker_id` is `null` without speaker separation; for mixed channels `channel` is `null`, and without separation `speaker` is too.
 
 ``` json
 {
@@ -39,6 +39,7 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
       "start": 0.994,
       "end": 9.054,
       "channel": 1,
+      "speaker_id": null,
       "speaker": "Канал 1",
       "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."
     },
@@ -46,6 +47,7 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
       "start": 3.49,
       "end": 3.934,
       "channel": 0,
+      "speaker_id": null,
       "speaker": "Канал 0",
       "text": "Угу"
     }
@@ -58,8 +60,8 @@ An object with the fields `source` (file name), `model`, `duration` (recording d
 One segment per line with the file name in `source`: the results of several files can be collected into one file (this is how `--summary out/all.jsonl` works).
 
 ``` json
-{"source": "call.wav", "start": 0.994, "end": 9.054, "channel": 1, "speaker": "Канал 1", "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."}
-{"source": "call.wav", "start": 3.49, "end": 3.934, "channel": 0, "speaker": "Канал 0", "text": "Угу"}
+{"source": "call.wav", "start": 0.994, "end": 9.054, "channel": 1, "speaker_id": null, "speaker": "Канал 1", "text": "Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии."}
+{"source": "call.wav", "start": 3.49, "end": 3.934, "channel": 0, "speaker_id": null, "speaker": "Канал 0", "text": "Угу"}
 ```
 
 ## SRT { #srt }

@@ -13,7 +13,7 @@ try:
     __version__ = version("stt-ru")
 except PackageNotFoundError:
     __version__ = "0.0.0"
-__description__ = """Распознавание русской речи: библиотека Python, команда stt-ru, веб-сервис и Docker-образ.
+__description__ = """Распознавание русской речи: библиотека Python, CLI stt-ru, веб-сервис и Docker-образ.
 Требует версию Python 3.11 и выше"""
 __author__ = "Шкарин Сергей"
 __author_email__ = "kouki.sergey@gmail.com"

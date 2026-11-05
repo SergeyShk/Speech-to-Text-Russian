@@ -51,6 +51,15 @@ stt-ru evaluate eval.csv -m gigaam-v3-e2e-rnnt -m t-tech/t-one -m alphacep/vosk-
 stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e2e-rnnt
 ```
 
+## Разделение говорящих { #diarization }
+
+С [`--diarize`](transcribe.md#diarization) работают еще две модели. При первом запуске они скачиваются в кэш Hugging Face (вместе около 35 МБ), `--model-dir` к ним не относится.
+
+| Модель | Что делает | Лицензия |
+| :----- | :--------- | :------- |
+| [pyannote segmentation 3.0](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) | Находит, кто говорит, в окнах по 10 с | MIT |
+| [CAM++ из WeSpeaker](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM) | Считает голосовой отпечаток, чтобы свести реплики одного человека | Apache-2.0 |
+
 ## Поиск речи { #vad }
 
 !!! info ""
