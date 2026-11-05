@@ -60,7 +60,7 @@ stt-ru transcribe meeting.mp3 --diarize
 stt-ru transcribe call.wav --mono --speakers 2    # channels mixed, exactly two speakers
 ```
 
-*   If the number of speakers is known, pass it in `--speakers`: this also finds those who speak little. A number below the real one merges people. One or two above it does almost no harm but adds extra speakers with a few segments; a much higher number splits people.
+*   If the number of speakers is known, pass it in `--speakers`: this also finds a person who speaks very little, about 1-2% of the time. A number below the real one merges people. One or two above it does almost no harm but adds extra speakers with a few segments; a much higher number splits people. There can also be fewer speakers than requested: a voice that never outweighs the others does not reach the result.
 *   Different channels of a stereo recording already separate speakers: for them `--diarize` only prints a warning. To separate speakers in a mixed recording, use `--mono`.
 *   Models without word times (Whisper) give a whole segment to whoever speaks longest in it.
 *   Transcription with `--diarize` takes about one and a half to two times longer. The models it needs are on the [Models](models.md#diarization) page.
