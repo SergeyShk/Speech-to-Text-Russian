@@ -548,6 +548,7 @@ async function init() {
     state.info = await (await fetch("/v1/info", { credentials: "same-origin" })).json();
   } catch {
     $("service").textContent = "Сервис недоступен";
+    $("upload").hidden = true;
     return;
   }
   $("service").textContent = `Модель ${state.info.model} · stt-ru ${state.info.version}`;
