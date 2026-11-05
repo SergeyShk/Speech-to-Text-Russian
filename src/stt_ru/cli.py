@@ -205,6 +205,7 @@ def build_parser() -> ArgumentParser:
         help="сколько секунд файл не должен меняться, чтобы его взять (по умолчанию 10)",
     )
     _add_model_options(transcribe, several=False)
+    _add_speaker_options(transcribe)
     output.add_argument(
         "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
     )
@@ -295,6 +296,7 @@ def build_parser() -> ArgumentParser:
         "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
     )
     _add_model_options(serve_parser, several=False)
+    _add_speaker_options(serve_parser)
     return parser
 
 
@@ -344,6 +346,19 @@ def _add_model_options(command: ArgumentParser, several: bool) -> None:
     vad.add_argument("--max-speech-s", type=float, metavar="С", help="наибольший фрагмент")
     vad.add_argument("--min-silence-ms", type=float, metavar="МС", help="наименьшая пауза")
     vad.add_argument("--speech-pad-ms", type=float, metavar="МС", help="запас по краям")
+
+
+def _add_speaker_options(command: ArgumentParser) -> None:
+    speakers = command.add_argument_group("говорящие")
+    speakers.add_argument(
+        "--diarize", action="store_true", help="разделять говорящих в записи с одной дорожкой"
+    )
+    speakers.add_argument(
+        "--speakers",
+        type=int,
+        metavar="N",
+        help="точное число говорящих в каждой записи, включает --diarize",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -416,6 +431,11 @@ def _vad_options(args: argparse.Namespace) -> VadOptions:
     return VadOptions(**{name: value for name, value in options.items() if value is not None})
 
 
+def _check_speakers(parser: ArgumentParser, args: argparse.Namespace) -> None:
+    if args.speakers is not None and args.speakers < 1:
+        parser.error(f"--speakers должно быть положительным числом: {args.speakers}")
+
+
 def _quantization(args: argparse.Namespace) -> str | None:
     return None if args.quantization == "none" else args.quantization
 
@@ -447,6 +467,7 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
         check_options(formats, args.summary, args.workers, args.output_dir)
         if args.watch:
             check_watch(args.interval, args.min_age)
+        _check_speakers(parser, args)
         vad = _vad_options(args)
         if args.output_dir is None:
             _check_printing(parser, args, formats)
@@ -489,6 +510,8 @@ def transcribe(parser: ArgumentParser, args: argparse.Namespace) -> None:
             vad=vad,
             split_channels=not args.mono,
             ffmpeg=args.ffmpeg,
+            diarize=args.diarize,
+            speakers=args.speakers,
         )
     except ModelError as error:
         print(f"stt-ru: ошибка: {error}", file=sys.stderr)
@@ -673,6 +696,7 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
     warn = _tolerant(log_to_stderr)
     log = ignore if args.quiet else warn
     try:
+        _check_speakers(parser, args)
         vad = _vad_options(args)
         if not 0 < args.port < 65536:
             parser.error(f"порт должен быть от 1 до 65535: {args.port}")
@@ -729,6 +753,8 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             vad=vad,
             split_channels=not args.mono,
             ffmpeg=args.ffmpeg,
+            diarize=args.diarize,
+            speakers=args.speakers,
         )
     except ModelError as error:
         print(f"stt-ru: ошибка: {error}", file=sys.stderr)

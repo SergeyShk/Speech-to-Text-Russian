@@ -1,14 +1,19 @@
 import os
 from collections.abc import Sequence
+from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
+from warnings import warn
 
 import numpy as np
 import soundfile as sf
 
 from .asr import DEFAULT_MODEL, DEFAULT_QUANTIZATION, SAMPLE_RATES, Recognizer
+from .asr.recognizer import Word
 from .audio import Audio, load_audio
 from .audio.loader import Samples
+from .diarization import Diarizer, Timeline
+from .exceptions import ParameterError
 from .result import Segment, Transcript
 from .vad import VadOptions
 
@@ -48,9 +53,16 @@ class Transcriber:
         vad (VadOptions): Параметры поиска речи
         split_channels (bool): Распознавать каналы отдельно; False - сводить в один
         ffmpeg (str): Путь к ffmpeg; None - поиск через find_ffmpeg
+        diarize (bool): Разделять говорящих в записи с одной дорожкой (см. Diarizer). Фрагмент
+            со сменой говорящего делится по словам; модель, которая не сообщает время слов,
+            отдает фрагмент целиком тому, кто говорит в нем дольше всех. Разные каналы
+            и так разделены: для них диаризация не выполняется, нужен split_channels=False
+        speakers (int): Точное число говорящих в записи, включает diarize;
+            None - определяется по записи
 
     Исключения:
         ModelError: Если модель не загружается
+        ParameterError: Если speakers меньше единицы
 
     Пример использования:
         >>> from stt_ru import Transcriber
@@ -70,12 +82,18 @@ class Transcriber:
         vad: VadOptions | None = None,
         split_channels: bool = True,
         ffmpeg: str | os.PathLike[str] | None = None,
+        diarize: bool = False,
+        speakers: int | None = None,
     ) -> None:
+        if speakers is not None and speakers < 1:
+            raise ParameterError(f"Число говорящих должно быть положительным: {speakers}")
         self.recognizer = Recognizer(
             model, quantization=quantization, model_dir=model_dir, providers=providers, vad=vad
         )
         self.split_channels = split_channels
         self.ffmpeg = ffmpeg
+        self.speakers = speakers
+        self.diarizer = Diarizer(providers=providers) if diarize or speakers is not None else None
 
     def transcribe(self, path: str | os.PathLike[str]) -> Transcript:
         """
@@ -137,22 +155,31 @@ class Transcriber:
             AudioError: Если модель не принимает частоту записи
         """
         tracks, channel_map = self._tracks(audio)
+        timeline = self._timeline(tracks, audio.sample_rate)
         cuts = cut_points([samples for _, samples in tracks], audio.sample_rate)
         segments: list[Segment] = []
         for start, end in pairwise(cuts):
             if end == start:
                 continue
             offset = start / audio.sample_rate
-            found = self.recognizer.recognize(
-                [samples[start:end] for _, samples in tracks], audio.sample_rate
-            )
-            segments += [
-                Segment(round(offset + begin, 3), round(offset + finish, 3), text, channel)
-                for (channel, _), window in zip(tracks, found, strict=True)
-                for begin, finish, text in window
-                if text
-            ]
+            waveforms = [samples[start:end] for _, samples in tracks]
+            if timeline is not None:
+                found = self.recognizer.recognize_words(waveforms, audio.sample_rate)[0]
+                segments += _by_speaker(found, offset, timeline)
+            else:
+                segments += [
+                    Segment(round(offset + begin, 3), round(offset + finish, 3), text, channel)
+                    for (channel, _), window in zip(
+                        tracks,
+                        self.recognizer.recognize(waveforms, audio.sample_rate),
+                        strict=True,
+                    )
+                    for begin, finish, text in window
+                    if text
+                ]
         segments.sort(key=lambda segment: (segment.start, segment.channel or 0))
+        if timeline is not None:
+            segments = _renumbered(segments)
         return Transcript(
             tuple(segments),
             audio.duration,
@@ -161,6 +188,18 @@ class Transcriber:
             source,
             channel_map,
         )
+
+    def _timeline(self, tracks: list[Track], sample_rate: int) -> Timeline | None:
+        if self.diarizer is None:
+            return None
+        if len(tracks) > 1:
+            warn(
+                "Каналы записи разные, каждый считается говорящим: "
+                "чтобы разделить говорящих в сведенной записи, нужно сводить каналы в один",
+                stacklevel=3,
+            )
+            return None
+        return Timeline(self.diarizer.diarize(tracks[0][1], sample_rate, self.speakers))
 
     def _tracks(self, audio: Audio) -> tuple[list[Track], tuple[int | None, ...]]:
         single: tuple[int | None, ...] = (None,) * audio.num_channels
@@ -180,6 +219,42 @@ class Transcriber:
         if len(tracks) == 1:
             return [(None, tracks[0][1])], single
         return tracks, tuple(channel_map)
+
+
+def _by_speaker(
+    found: list[tuple[float, float, str, list[Word] | None]], offset: float, timeline: Timeline
+) -> list[Segment]:
+    segments = []
+    for begin, finish, text, words in found:
+        if not text:
+            continue
+        begin, finish = offset + begin, offset + finish
+        if not words:
+            speaker = timeline.speaker(begin, finish) or 1
+            segments.append(Segment(round(begin, 3), round(finish, 3), text, speaker_id=speaker))
+            continue
+        groups: list[tuple[int, float, list[str]]] = []
+        for first, last, word in words:
+            speaker = timeline.speaker(offset + first, offset + last) or 1
+            if not groups or groups[-1][0] != speaker:
+                groups.append((speaker, offset + first, []))
+            groups[-1][2].append(word)
+        starts = [begin, *(group[1] for group in groups[1:])]
+        ends = [*starts[1:], finish]
+        segments += [
+            Segment(round(start, 3), round(end, 3), " ".join(group[2]), speaker_id=group[0])
+            for start, end, group in zip(starts, ends, groups, strict=True)
+        ]
+    return segments
+
+
+def _renumbered(segments: list[Segment]) -> list[Segment]:
+    # У говорящего без единого слова нет строки в результате: номера идут без пропусков
+    numbers: dict[int | None, int] = {}
+    return [
+        replace(segment, speaker_id=numbers.setdefault(segment.speaker_id, len(numbers) + 1))
+        for segment in segments
+    ]
 
 
 def same_signal(first: Samples, second: Samples, max_lag: int = 0, block: int = 1 << 20) -> bool:

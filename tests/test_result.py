@@ -8,6 +8,7 @@ from stt_ru import Segment, Transcript
 def test_segment_speaker():
     assert Segment(0.0, 1.0, "Да.", channel=0).speaker == "Канал 0"
     assert Segment(0.0, 1.0, "Да.").speaker is None
+    assert Segment(0.0, 1.0, "Да.", speaker_id=2).speaker == "Говорящий 2"
 
 
 def test_segment_duration():

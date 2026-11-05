@@ -4,14 +4,14 @@ import sys
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast, get_args
+from typing import Any, cast, get_args
 
 import numpy as np
 import onnx_asr
 import onnxruntime as rt
 from onnx_asr.adapters import TextResultsAsrAdapter
 from onnx_asr.utils import ModelFileNotFoundError, SampleRates
-from onnx_asr.vad import Vad
+from onnx_asr.vad import TimestampedSegmentResult, Vad
 
 from ..audio.loader import Samples
 from ..exceptions import AudioError, ModelError
@@ -34,6 +34,7 @@ EXCLUDED_PROVIDERS = (
 WITHOUT_INT8 = frozenset({"t-tech/t-one"})
 
 Found = list[tuple[float, float, str]]
+Word = tuple[float, float, str]
 
 
 def default_providers() -> list[str]:
@@ -153,12 +154,48 @@ class Recognizer:
         Исключения:
             AudioError: Если модель не принимает такую частоту дискретизации
         """
+        return [
+            [(segment.start, segment.end, segment.text) for segment in result]
+            for result in self._run(self._asr, waveforms, sample_rate)
+        ]
+
+    def recognize_words(
+        self, waveforms: Sequence[Samples], sample_rate: int
+    ) -> list[list[tuple[float, float, str, list[Word] | None]]]:
+        """
+        Распознавание со временем слов
+
+        Описание:
+            Как recognize, но у каждого фрагмента есть еще его слова. Слова не отличаются от текста
+            фрагмента, кроме лишних пробелов. Конец слова - начало следующего, у последнего -
+            конец фрагмента
+
+        Аргументы:
+            waveforms (list[numpy.ndarray]): Одномерные массивы отсчетов float32
+            sample_rate (int): Частота дискретизации, Гц, одна из SAMPLE_RATES
+
+        Вывод:
+            list[list[tuple]]: Для каждой записи фрагменты речи: начало и конец в секундах, текст
+                и список слов (начало, конец, слово); вместо списка None, если модель
+                не сообщает время слов
+
+        Исключения:
+            AudioError: Если модель не принимает такую частоту дискретизации
+        """
+        return [
+            [(segment.start, segment.end, segment.text, _words(segment)) for segment in result]
+            for result in self._run(self._asr.with_timestamps(), waveforms, sample_rate)
+        ]
+
+    def _run(
+        self, adapter: Any, waveforms: Sequence[Samples], sample_rate: int
+    ) -> list[list[Any]]:
         if sample_rate not in SAMPLE_RATES:
             raise AudioError(
                 f"Частота {sample_rate} Гц не поддерживается, допустимые: "
                 + ", ".join(map(str, SAMPLE_RATES))
             )
-        found: list[Found] = [[] for _ in waveforms]
+        found: list[list[Any]] = [[] for _ in waveforms]
         # Один NaN или inf превращает в <unk> текст всей пачки фрагментов
         waveforms = [
             waveform
@@ -172,9 +209,35 @@ class Recognizer:
             if len(waveform) >= MIN_DURATION * sample_rate
         ]
         if audible:
-            results = self._asr.recognize(
+            results = adapter.recognize(
                 [waveforms[index] for index in audible], sample_rate=cast(SampleRates, sample_rate)
             )
             for index, result in zip(audible, results, strict=True):
-                found[index] = [(segment.start, segment.end, segment.text) for segment in result]
+                found[index] = list(result)
         return found
+
+
+def _words(segment: TimestampedSegmentResult) -> list[Word] | None:
+    if not segment.tokens or not segment.timestamps:
+        return None
+    moments: list[float] = []
+    words: list[str] = []
+    fresh = True
+    for token, moment in zip(segment.tokens, segment.timestamps, strict=True):
+        if not token.strip():
+            fresh = True
+            continue
+        if fresh or token[0].isspace():
+            words.append(token.strip())
+            moments.append(segment.start + moment)
+        else:
+            words[-1] += token.rstrip()
+        fresh = token[-1].isspace()
+    # Некоторые модели собирают текст из токенов иначе: такие времена к тексту не привязать
+    if " ".join(words) != " ".join(segment.text.split()):
+        return None
+    ends = [*moments[1:], segment.end]
+    return [
+        (min(begin, segment.end), min(finish, segment.end), word)
+        for begin, finish, word in zip(moments, ends, words, strict=True)
+    ]

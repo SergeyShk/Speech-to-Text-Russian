@@ -87,9 +87,9 @@ function since(value) {
   return value ? (Date.now() - Date.parse(value)) / 1000 : 0;
 }
 
-function speakerColor(channel) {
+function speakerColor(segment) {
   const css = getComputedStyle(document.documentElement);
-  return css.getPropertyValue(`--speaker-${(channel ?? 0) % 4}`).trim();
+  return css.getPropertyValue(`--speaker-${(segment.speaker_id ?? segment.channel ?? 0) % 4}`).trim();
 }
 
 function showToken() {
@@ -359,7 +359,7 @@ function renderSegments() {
       if (index < 2) cell.className = "time";
       if (index === 2) {
         cell.className = "speaker";
-        cell.style.color = speakerColor(segment.channel);
+        cell.style.color = speakerColor(segment);
       }
       row.append(cell);
     });
@@ -408,7 +408,7 @@ function drawWave() {
   context.globalAlpha = 0.18;
   for (const segment of state.segments) {
     const targets = segment.channel === null ? [...Array(rows).keys()] : [segment.channel];
-    context.fillStyle = speakerColor(segment.channel);
+    context.fillStyle = speakerColor(segment);
     for (const row of targets) {
       if (row < rows) context.fillRect(x(segment.start), row * rowHeight, Math.max(1, x(segment.end) - x(segment.start)), rowHeight);
     }

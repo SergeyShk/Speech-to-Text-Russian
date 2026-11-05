@@ -268,6 +268,8 @@ class TestModelOptions:
             "vad": VadOptions(),
             "split_channels": True,
             "ffmpeg": None,
+            "diarize": False,
+            "speakers": None,
         }
 
     def test_arguments(self, fake, files, tmp_path):
@@ -289,6 +291,8 @@ class TestModelOptions:
             "vad": VadOptions(0.4, None, 100, 15, 300, 50),
             "split_channels": False,
             "ffmpeg": "/opt/ffmpeg",
+            "diarize": False,
+            "speakers": None,
         }
 
     def test_available_device(self, fake, files, monkeypatch):
@@ -725,6 +729,8 @@ class TestServe:
             "vad": VadOptions(),
             "split_channels": True,
             "ffmpeg": None,
+            "diarize": False,
+            "speakers": None,
         }
         err = capsys.readouterr().err
         assert "Загрузка модели gigaam-v3-e2e-rnnt..." in err
@@ -1074,3 +1080,24 @@ class TestTranscribeChecks:
         )
         main(["transcribe", str(files), "-o", str(tmp_path / "out"), "--watch", "-q"])
         assert calls == [[str(files)]]
+
+
+class TestSpeakers:
+    def test_transcribe_options(self, fake, files):
+        main(["transcribe", str(files), "--diarize", "--speakers", "3", "-q"])
+        assert fake[0].kwargs["diarize"] is True
+        assert fake[0].kwargs["speakers"] == 3
+
+    @pytest.mark.parametrize("command", ["transcribe", "serve"])
+    def test_wrong_speakers(self, fake, files, capsys, command):
+        paths = [str(files)] if command == "transcribe" else []
+        with pytest.raises(SystemExit) as caught:
+            main([command, *paths, "--speakers", "0"])
+        assert caught.value.code == 2
+        assert "--speakers должно быть положительным числом: 0" in capsys.readouterr().err
+        assert fake == []
+
+    def test_not_for_evaluate(self, capsys):
+        with pytest.raises(SystemExit):
+            main(["evaluate", "eval.csv", "--diarize"])
+        assert "--diarize" in capsys.readouterr().err

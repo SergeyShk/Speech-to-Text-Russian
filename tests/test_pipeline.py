@@ -11,6 +11,8 @@ import soundfile as sf
 import stt_ru
 from stt_ru import Segment, Transcriber, pipeline
 from stt_ru.audio import Audio
+from stt_ru.diarization import Turn
+from stt_ru.exceptions import ParameterError
 from stt_ru.pipeline import cut_points, same_signal
 from stt_ru.vad import VadOptions
 
@@ -19,6 +21,7 @@ CALL = Path(__file__).parent / "data" / "call.wav"
 
 class FakeRecognizer:
     instances: ClassVar[list["FakeRecognizer"]] = []
+    fragments: ClassVar[list] = []
 
     def __init__(self, model="fake", **kwargs):
         self.model = model
@@ -32,12 +35,44 @@ class FakeRecognizer:
         found += [[(0.5, 1.5, "Ответ.")] for _ in waveforms[1:]]
         return found
 
+    def recognize_words(self, waveforms, sample_rate):
+        assert len(waveforms) == 1
+        return [FakeRecognizer.fragments]
+
 
 @pytest.fixture
 def fake(monkeypatch):
     FakeRecognizer.instances.clear()
     monkeypatch.setattr(pipeline, "Recognizer", FakeRecognizer)
     return FakeRecognizer.instances
+
+
+class FakeDiarizer:
+    instances: ClassVar[list["FakeDiarizer"]] = []
+    turns: ClassVar[list[Turn]] = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.calls = []
+        FakeDiarizer.instances.append(self)
+
+    def diarize(self, samples, sample_rate, speakers=None):
+        self.calls.append((samples.copy(), sample_rate, speakers))
+        return FakeDiarizer.turns
+
+
+@pytest.fixture
+def diarizing(fake, monkeypatch):
+    FakeDiarizer.instances.clear()
+    monkeypatch.setattr(pipeline, "Diarizer", FakeDiarizer)
+    monkeypatch.setattr(FakeDiarizer, "turns", [Turn(0.0, 1.0, 2), Turn(1.0, 2.0, 1)])
+    words = [(0.2, 0.6, "Алло."), (1.2, 1.5, "Да,"), (1.5, 1.8, "слушаю.")]
+    monkeypatch.setattr(FakeRecognizer, "fragments", [(0.2, 1.8, "Алло. Да, слушаю.", words)])
+    return FakeDiarizer.instances
+
+
+def mono(rate=8000, seconds=2.0):
+    return Audio(np.ones((int(rate * seconds), 1), dtype=np.float32) * 0.1, rate)
 
 
 def stereo(rate=8000, seconds=1.0):
@@ -316,6 +351,92 @@ def test_named_pipe_is_not_read(fake, tmp_path):
 
 def test_package_exports():
     assert stt_ru.Transcriber is Transcriber
+
+
+class TestDiarization:
+    def test_fragment_split_by_words(self, diarizing):
+        transcript = Transcriber(diarize=True).transcribe_audio(mono())
+        assert transcript.segments == (
+            Segment(0.2, 1.2, "Алло.", speaker_id=1),
+            Segment(1.2, 1.8, "Да, слушаю.", speaker_id=2),
+        )
+        assert transcript.channels == 1
+        assert transcript.channel_map == (None,)
+        (samples, rate, speakers) = diarizing[0].calls[0]
+        assert (len(samples), rate, speakers) == (16000, 8000, None)
+
+    def test_not_loaded_by_default(self, diarizing):
+        assert Transcriber().diarizer is None
+        assert diarizing == []
+
+    def test_providers_passed(self, diarizing):
+        Transcriber(diarize=True, providers=["CPU"])
+        assert diarizing[0].kwargs == {"providers": ["CPU"]}
+
+    def test_speakers_turn_on_diarization(self, diarizing):
+        Transcriber(speakers=2).transcribe_audio(mono())
+        assert diarizing[0].calls[0][2] == 2
+
+    @pytest.mark.parametrize("speakers", [0, -2])
+    def test_wrong_speakers(self, diarizing, speakers):
+        with pytest.raises(ParameterError, match="Число говорящих"):
+            Transcriber(speakers=speakers)
+
+    def test_without_word_times(self, diarizing, monkeypatch):
+        monkeypatch.setattr(FakeRecognizer, "fragments", [(0.2, 1.8, "Целиком.", None)])
+        monkeypatch.setattr(FakeDiarizer, "turns", [Turn(0.0, 0.5, 4), Turn(0.5, 2.0, 7)])
+        (segment,) = Transcriber(diarize=True).transcribe_audio(mono()).segments
+        assert segment == Segment(0.2, 1.8, "Целиком.", speaker_id=1)
+
+    def test_no_speech_found(self, diarizing, monkeypatch):
+        monkeypatch.setattr(FakeDiarizer, "turns", [])
+        segments = Transcriber(diarize=True).transcribe_audio(mono()).segments
+        assert segments == (Segment(0.2, 1.8, "Алло. Да, слушаю.", speaker_id=1),)
+
+    def test_empty_text_dropped(self, diarizing, monkeypatch):
+        monkeypatch.setattr(FakeRecognizer, "fragments", [(0.2, 0.3, "", [])])
+        assert Transcriber(diarize=True).transcribe_audio(mono()).segments == ()
+
+    def test_numbered_without_gaps(self, diarizing, monkeypatch):
+        monkeypatch.setattr(FakeDiarizer, "turns", [Turn(0.0, 2.0, 5)])
+        (segment,) = Transcriber(diarize=True).transcribe_audio(mono()).segments
+        assert segment.speaker_id == 1
+
+    def test_different_channels_kept(self, diarizing):
+        audio = Audio(stereo(), 8000)
+        with pytest.warns(UserWarning, match="Каналы записи разные"):
+            transcript = Transcriber(diarize=True).transcribe_audio(audio)
+        assert {segment.channel for segment in transcript.segments} == {0, 1}
+        assert {segment.speaker_id for segment in transcript.segments} == {None}
+        assert diarizing[0].calls == []
+
+    def test_mixed_channels_diarized(self, diarizing):
+        audio = Audio(stereo(), 8000)
+        Transcriber(diarize=True, split_channels=False).transcribe_audio(audio)
+        assert len(diarizing[0].calls) == 1
+
+    def test_windows_keep_offset(self, diarizing, monkeypatch):
+        monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)
+        monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.1)
+        words = [(0.2, 0.4, "Да.")]
+        monkeypatch.setattr(FakeRecognizer, "fragments", [(0.2, 0.4, "Да.", words)])
+        segments = Transcriber(diarize=True).transcribe_audio(mono(seconds=3.0)).segments
+        assert len(segments) == 3
+        assert [segment.start for segment in segments] == sorted(
+            segment.start for segment in segments
+        )
+        assert segments[-1].start > 2.0
+
+
+@pytest.mark.network
+def test_real_diarization():
+    transcriber = Transcriber(diarize=True, split_channels=False)
+    segments = transcriber.transcribe(CALL).segments
+    operator = next(s for s in segments if "благодарю" in s.text.lower())
+    client = next(s for s in segments if s.text.lower().startswith("до свидания") and s.start > 12)
+    assert operator.speaker == "Говорящий 1"
+    assert client.speaker == "Говорящий 2"
+    assert {s.speaker_id for s in segments} == {1, 2}
 
 
 @pytest.mark.network

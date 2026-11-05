@@ -13,22 +13,29 @@ class Segment:
         end (float): Конец, с
         text (str): Распознанный текст
         channel (int): Номер канала записи, с нуля; None - каналы сведены в один
+        speaker_id (int): Номер говорящего при диаризации, с единицы, по порядку появления
+            в записи; None - диаризации не было
 
     Пример использования:
         >>> from stt_ru import Segment
         >>> segment = Segment(0.99, 9.05, "Наталья, благодарю вас за ожидание.", channel=1)
         >>> segment.speaker, segment.duration
         ('Канал 1', 8.06)
+        >>> Segment(0.99, 9.05, "Наталья, благодарю вас за ожидание.", speaker_id=2).speaker
+        'Говорящий 2'
     """
 
     start: float
     end: float
     text: str
     channel: int | None = None
+    speaker_id: int | None = None
 
     @property
     def speaker(self) -> str | None:
-        """Говорящий: «Канал N» для канала записи, None для сведенных каналов"""
+        """Говорящий: «Говорящий N» при диаризации, «Канал N» для канала записи, иначе None"""
+        if self.speaker_id is not None:
+            return f"Говорящий {self.speaker_id}"
         return None if self.channel is None else f"Канал {self.channel}"
 
     @property
