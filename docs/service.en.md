@@ -39,6 +39,9 @@ Jobs are visible in the browser they were uploaded from: their list is kept in t
 | `--data-dir` | the system temporary folder | Folder for uploaded and temporary files |
 | `--diarize` | off | [Separate speakers](transcribe.md#diarization) unless a job says otherwise; the models are loaded at startup |
 | `--speakers` | - | Exact number of speakers from 1 to 100 unless a job says otherwise; turns on `--diarize` |
+| `--embed-from` | - | Site allowed to show the page in an iframe, for example `https://huggingface.co`; can be repeated |
+| `--notice` | - | Text for visitors above the upload form |
+| `--examples` | - | Folder with example recordings: buttons that upload them appear on the page |
 | `-q`, `--quiet` | off | Do not print progress; errors are always printed |
 
 Without `--diarize`, speaker separation is available too: the first such job loads the [models](models.md#diarization), downloading them if needed, and fails without network and cache.
@@ -72,7 +75,8 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/jobs/{id}/waveform` | Waveform peaks per channel |
 | `GET /v1/jobs/{id}/audio` | The uploaded file, with seeking support (`Range`): audio and video for the player, anything else as an attachment |
 | `DELETE /v1/jobs/{id}` | Deletes the job and its files |
-| `GET /v1/info` | Version, model, limits, formats, whether a token is required, default speaker separation and the largest number of speakers |
+| `GET /v1/examples/{name}` | Example recording from the `--examples` folder |
+| `GET /v1/info` | Version, model, limits, formats, whether a token is required, the text for visitors, example recordings, default speaker separation and the largest number of speakers |
 | `GET /healthz` | Health check: `{"status": "ok"}` |
 
 A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments), `diarize` and `speakers` (speaker separation of this job) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.
@@ -111,9 +115,10 @@ for segment in result["segments"]:
 import uvicorn
 
 from stt_ru import Transcriber
-from stt_ru.service import JobQueue, create_app
+from stt_ru.service import JobQueue, PageOptions, create_app
 
 jobs = JobQueue(Transcriber(), "/data/stt", workers=2, max_duration=3600, keep=3600)
-app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
+page = PageOptions(embed_from=["https://example.com"], notice="Recordings are kept for an hour")
+app = create_app(jobs, token="my-secret-token", max_size=200 << 20, page=page)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```

@@ -32,12 +32,14 @@
 
       <section class="card" id="upload">
         <h2>Новая запись</h2>
+        <p class="notice" id="notice" hidden></p>
         <label class="drop" id="drop">
           <input type="file" id="file" accept="audio/*,video/*">
           <strong>Перетащите файл сюда</strong>
           <span class="muted">или нажмите, чтобы выбрать</span>
           <span class="muted small" id="limits"></span>
         </label>
+        <div class="examples" id="examples" hidden></div>
         <div class="options">
           <label class="check">
             <input type="checkbox" id="diarize">

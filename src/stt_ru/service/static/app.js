@@ -462,9 +462,48 @@ function animate() {
   if (!$("audio").paused) state.frame = requestAnimationFrame(animate);
 }
 
+async function uploadExample(name) {
+  showUploadErrors([]);
+  try {
+    const response = await fetch(`/v1/examples/${encodeURIComponent(name)}`, { credentials: "same-origin" });
+    if (response.status === 401) {
+      showToken();
+      return;
+    }
+    if (!response.ok) throw new Error(`Ошибка ${response.status}`);
+    const blob = await response.blob();
+    await upload([new File([blob], name, { type: blob.type })]);
+  } catch (error) {
+    showUploadErrors([`${name}: ${error.message}`]);
+  }
+}
+
+function renderExamples(names) {
+  const box = $("examples");
+  box.replaceChildren();
+  if (names.length) {
+    const label = document.createElement("span");
+    label.className = "muted small";
+    label.textContent = "Примеры:";
+    box.append(label);
+  }
+  for (const name of names) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button";
+    button.textContent = name.replace(/\.[^.]+$/, "");
+    button.addEventListener("click", () => uploadExample(name));
+    box.append(button);
+  }
+  box.hidden = names.length === 0;
+}
+
 function start() {
   $("token-form").hidden = true;
   $("upload").hidden = false;
+  $("notice").textContent = state.info.notice ?? "";
+  $("notice").hidden = !state.info.notice;
+  renderExamples(state.info.examples);
   const info = state.info;
   const limits = [`до ${megabytes(info.max_size)}`];
   if (info.max_duration) limits.push(`до ${length(info.max_duration)}`);

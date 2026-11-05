@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 import stt_ru
 from stt_ru import Transcriber
-from stt_ru.service import JobQueue, api, create_app
+from stt_ru.exceptions import ParameterError
+from stt_ru.service import JobQueue, PageOptions, api, create_app
 
 from .conftest import job_folders, wait, wav_bytes
 
@@ -78,6 +79,8 @@ class TestPage:
             "max_duration": None,
             "keep": 86400.0,
             "formats": ["txt", "json", "jsonl", "srt", "vtt", "ass", "csv"],
+            "notice": None,
+            "examples": [],
             "diarize": False,
             "speakers": None,
             "max_speakers": 100,
@@ -98,6 +101,7 @@ class TestPage:
             "/v1/jobs/{job_id}/result",
             "/v1/jobs/{job_id}/waveform",
             "/v1/jobs/{job_id}/audio",
+            "/v1/examples/{name}",
         }
 
 
@@ -176,6 +180,109 @@ class TestJobs:
 
     def test_missing_file_field(self, client):
         assert client.post("/v1/transcriptions", data={"name": "x"}).status_code == 422
+
+
+class TestPageOptions:
+    def test_no_embedding_by_default(self, client):
+        policy = client.get("/").headers["content-security-policy"]
+        assert policy.endswith("frame-ancestors 'none'")
+
+    def test_embedding(self, jobs):
+        options = PageOptions(embed_from=["https://huggingface.co", "http://localhost:3000"])
+        with make_client(jobs, page=options) as client:
+            policy = client.get("/").headers["content-security-policy"]
+        assert policy.endswith("frame-ancestors https://huggingface.co http://localhost:3000")
+
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            "huggingface.co",
+            "*",
+            "https://",
+            "https://a.com/path",
+            "https://a.com; script-src *",
+            "https://a.com\nX-Test: 1",
+            "javascript://a.com",
+        ],
+    )
+    def test_wrong_origin(self, origin):
+        with pytest.raises(ParameterError, match="Адрес сайта должен быть вида"):
+            PageOptions(embed_from=[origin])
+
+    def test_notice_in_info(self, jobs):
+        with make_client(jobs, page=PageOptions(notice="Записи удаляются")) as client:
+            assert client.get("/v1/info").json()["notice"] == "Записи удаляются"
+
+    def test_page_has_elements(self, client):
+        page = client.get("/").text
+        assert 'id="notice"' in page and 'id="examples"' in page
+
+
+class TestExamples:
+    @pytest.fixture
+    def folder(self, tmp_path):
+        folder = tmp_path / "examples"
+        folder.mkdir()
+        (folder / "диалог.mp3").write_bytes(b"mp3")
+        (folder / "call.wav").write_bytes(b"wav")
+        (folder / "notes.txt").write_bytes(b"text")
+        (folder / ".hidden.wav").write_bytes(b"hidden")
+        (folder / "inner").mkdir()
+        (folder / "inner" / "deep.wav").write_bytes(b"deep")
+        (tmp_path / "secret.wav").write_bytes(b"secret")
+        return folder
+
+    @pytest.fixture
+    def client(self, jobs, folder):
+        with make_client(jobs, page=PageOptions(examples=folder)) as client:
+            yield client
+
+    def test_listed(self, client):
+        assert client.get("/v1/info").json()["examples"] == ["call.wav", "notes.txt", "диалог.mp3"]
+
+    def test_file(self, client):
+        response = client.get(f"/v1/examples/{quote('диалог.mp3')}")
+        assert response.status_code == 200
+        assert response.content == b"mp3"
+        assert response.headers["content-type"] == "audio/mpeg"
+        assert response.headers["content-disposition"].startswith("inline")
+
+    def test_not_playable_is_attachment(self, client):
+        response = client.get("/v1/examples/notes.txt")
+        assert response.headers["content-type"] == "application/octet-stream"
+        assert response.headers["content-disposition"].startswith("attachment")
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "missing.wav",
+            ".hidden.wav",
+            "inner",
+            "inner%2Fdeep.wav",
+            "..%2Fsecret.wav",
+            "%2e%2e%2fsecret.wav",
+        ],
+    )
+    def test_only_listed_files(self, client, name):
+        assert client.get(f"/v1/examples/{name}").status_code == 404
+
+    def test_needs_token(self, jobs, folder):
+        with make_client(jobs, token="secret", page=PageOptions(examples=folder)) as client:
+            assert client.get("/v1/examples/call.wav").status_code == 401
+            headers = {"Authorization": "Bearer secret"}
+            assert client.get("/v1/examples/call.wav", headers=headers).status_code == 200
+
+    def test_data_policy(self, client):
+        policy = client.get("/v1/examples/call.wav").headers["content-security-policy"]
+        assert "sandbox" in policy
+
+    def test_missing_folder(self, tmp_path):
+        with pytest.raises(ParameterError, match="Каталога с примерами нет"):
+            PageOptions(examples=tmp_path / "missing")
+
+    def test_no_examples_by_default(self, jobs):
+        with make_client(jobs) as client:
+            assert client.get("/v1/examples/call.wav").status_code == 404
 
 
 class TestSpeakers:
@@ -499,7 +606,9 @@ class TestRefusedBeforeBody:
             raise asyncio.CancelledError
 
         guard = api._Guard(cancelled, max_body=1000)
-        app = SimpleNamespace(state=SimpleNamespace(settings=api._Settings(jobs, None, 1000)))
+        app = SimpleNamespace(
+            state=SimpleNamespace(settings=api._Settings(jobs, None, 1000, PageOptions(), {}))
+        )
         messages = []
 
         async def send(message):

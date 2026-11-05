@@ -1,8 +1,10 @@
-.PHONY: help uv deps lock lint ruff format mypy test test-cov clean clean-build clean-pyc clean-test build publish publish-test docs-build docs-serve docs-deploy docker docker-gpu notebooks
+.PHONY: help uv deps lock lint ruff format mypy test test-cov clean clean-build clean-pyc clean-test build publish publish-test docs-build docs-serve docs-deploy docker docker-gpu notebooks demo demo-login demo-upload
 .DEFAULT_GOAL := help
 SRC_PATH := src
 TESTS_PATH := tests
 NOTEBOOKS_PATH := notebooks
+DEMO_PATH := demo
+HF_SPACE := SergeyShk/stt-ru
 PACKAGE := stt_ru
 
 help: ## Показать список команд
@@ -88,6 +90,16 @@ notebooks: uv ## Выполнить ноутбуки из notebooks/ и запи
 	uv run pytest --nbmake --overwrite $(NOTEBOOKS_PATH) -p no:cacheprovider
 	uv run jupyter nbconvert --coalesce-streams $(NOTEBOOKS_PATH)/*.ipynb
 	uv run nbstripout --keep-output --keep-count --extra-keys metadata.language_info.version $(NOTEBOOKS_PATH)/*.ipynb
+
+demo: uv ## Запустить демо локально
+	uv run --extra service --extra ffmpeg stt-ru serve --port 7860 --diarize --examples $(DEMO_PATH)/examples --max-size 50 --max-duration 10 --max-queue 10 --keep 1
+
+demo-login: uv ## Войти в Hugging Face для заливки демо
+	uvx --from huggingface_hub hf auth login
+
+demo-upload: uv ## Залить демо в Space на Hugging Face
+	uvx --from huggingface_hub hf repos create $(HF_SPACE) --repo-type space --space-sdk docker --public --exist-ok
+	uvx --from huggingface_hub hf upload $(HF_SPACE) $(DEMO_PATH) . --repo-type space
 
 docker: ## Собрать Docker-образ для CPU
 	docker build -f docker/Dockerfile -t stt-ru .

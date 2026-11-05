@@ -294,6 +294,22 @@ def build_parser() -> ArgumentParser:
         help="каталог для загруженных и временных файлов (по умолчанию системный временный)",
     )
     server.add_argument(
+        "--embed-from",
+        action="append",
+        default=[],
+        metavar="АДРЕС",
+        help="сайт, которому можно показывать страницу в iframe, например "
+        "https://huggingface.co; можно повторить",
+    )
+    server.add_argument(
+        "--notice", metavar="ТЕКСТ", help="текст для посетителей над формой загрузки"
+    )
+    server.add_argument(
+        "--examples",
+        metavar="КАТАЛОГ",
+        help="каталог с примерами записей: на странице появляются кнопки для их загрузки",
+    )
+    server.add_argument(
         "-q", "--quiet", action="store_true", help="не выводить ход работы (ошибки выводятся)"
     )
     _add_model_options(serve_parser, several=False)
@@ -722,7 +738,7 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
     try:
         import uvicorn
 
-        from .service import JobQueue, create_app
+        from .service import JobQueue, PageOptions, create_app
     except (ImportError, RuntimeError) as error:
         # Без python-multipart FastAPI бросает RuntimeError при объявлении загрузки файла
         package = getattr(error, "name", None) or "python-multipart"
@@ -731,6 +747,10 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+    try:
+        page = PageOptions(args.embed_from, args.notice, args.examples)
+    except ParameterError as error:
+        parser.error(str(error))
     reason = _bind_error(args.host, args.port)
     if reason is not None:
         print(
@@ -771,7 +791,7 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
         log=log,
         errors=warn,
     )
-    app = create_app(jobs, token=token, max_size=int(args.max_size * (1 << 20)))
+    app = create_app(jobs, token=token, max_size=int(args.max_size * (1 << 20)), page=page)
     previous = tempfile.tempdir
     if args.data_dir is not None:
         # Туда же - тело загрузки, которое разбирает Starlette, и WAV, который пишет ffmpeg

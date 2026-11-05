@@ -39,6 +39,9 @@ STT_RU_TOKEN=my-secret-token stt-ru serve --host 0.0.0.0 -j 2    # доступ 
 | `--data-dir` | системный временный каталог | Каталог для загруженных и временных файлов |
 | `--diarize` | выключен | [Разделять говорящих](transcribe.md#diarization), если задача не указала иное; модели загружаются при запуске |
 | `--speakers` | - | Точное число говорящих от 1 до 100, если задача не указала иное; включает `--diarize` |
+| `--embed-from` | - | Сайт, которому можно показывать страницу в iframe, например `https://huggingface.co`; можно повторить |
+| `--notice` | - | Текст для посетителей над формой загрузки |
+| `--examples` | - | Каталог с примерами записей: на странице появляются кнопки, которые их загружают |
 | `-q`, `--quiet` | выключен | Не выводить ход работы; ошибки выводятся всегда |
 
 Без `--diarize` разделение говорящих тоже доступно: первая такая задача загружает [модели](models.md#diarization), при необходимости скачивая их, а без сети и без кэша завершается ошибкой.
@@ -72,7 +75,8 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/jobs/{id}/waveform` | Пики формы волны по каналам |
 | `GET /v1/jobs/{id}/audio` | Загруженный файл, с поддержкой перемотки (`Range`): звук и видео - для плеера, остальное - как вложение |
 | `DELETE /v1/jobs/{id}` | Удаляет задачу и ее файлы |
-| `GET /v1/info` | Версия, модель, пределы, форматы, нужен ли токен, разделение говорящих по умолчанию и наибольшее число говорящих |
+| `GET /v1/examples/{name}` | Пример записи из каталога `--examples` |
+| `GET /v1/info` | Версия, модель, пределы, форматы, нужен ли токен, текст для посетителей, примеры записей, разделение говорящих по умолчанию и наибольшее число говорящих |
 | `GET /healthz` | Проверка работы: `{"status": "ok"}` |
 
 Задача - JSON с полями `id`, `status` (`queued` - в очереди, `running` - распознается, `done` - готово, `failed` - ошибка), `filename`, `size`, `created`, `started`, `finished`, `expires` (когда задача будет удалена), `position` (сколько задач перед ней), `duration`, `channels`, `segments` (число фрагментов), `diarize` и `speakers` (разделение говорящих этой задачи) и `error`. Ошибки - `{"detail": "..."}`: 401 без токена, 404 для удаленной задачи, 400 для неизвестного формата результата, 409 для неготовой или упавшей, 413 для большого файла, 422 для неверных параметров, 503 при полной очереди.
@@ -111,9 +115,10 @@ for segment in result["segments"]:
 import uvicorn
 
 from stt_ru import Transcriber
-from stt_ru.service import JobQueue, create_app
+from stt_ru.service import JobQueue, PageOptions, create_app
 
 jobs = JobQueue(Transcriber(), "/data/stt", workers=2, max_duration=3600, keep=3600)
-app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
+page = PageOptions(embed_from=["https://example.com"], notice="Записи хранятся час")
+app = create_app(jobs, token="my-secret-token", max_size=200 << 20, page=page)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```

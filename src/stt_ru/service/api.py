@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
 import mimetypes
+import os
+import re
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -50,8 +52,9 @@ MEDIA_TYPES = {
 }
 PAGE_POLICY = (
     "default-src 'self'; img-src 'self'; media-src 'self'; object-src 'none'; "
-    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    "base-uri 'none'; form-action 'self'; frame-ancestors {ancestors}"
 )
+_ORIGIN = re.compile(r"https?://[A-Za-z0-9.-]+(:\d+)?")
 # Ответы API и загруженные файлы не исполняются как страница, даже если это HTML или SVG
 DATA_POLICY = b"default-src 'none'; sandbox"
 TOKEN_REQUIRED = "Нужен токен доступа"
@@ -90,6 +93,8 @@ class ServiceInfo(BaseModel):
     max_duration: float | None = Field(description="Наибольшая длительность записи, с")
     keep: float = Field(description="Сколько секунд задача хранится после окончания")
     formats: list[str] = Field(description="Форматы результата")
+    notice: str | None = Field(description="Текст для посетителей над формой загрузки")
+    examples: list[str] = Field(description="Имена примеров записей")
     diarize: bool = Field(description="Разделять ли говорящих, если задача не указала")
     speakers: int | None = Field(description="Число говорящих, если задача не указала")
     max_speakers: int = Field(description="Наибольшее число говорящих в задаче")
@@ -103,10 +108,69 @@ class Waveform(BaseModel):
 
 
 @dataclass(frozen=True)
+class PageOptions:
+    """
+    Настройки страницы сервиса
+
+    Аргументы:
+        embed_from (Sequence[str]): Сайты, которым можно показывать страницу в iframe,
+            например "https://huggingface.co"; пусто - никому
+        notice (str): Текст для посетителей над формой загрузки; None - без текста
+        examples (str): Каталог с примерами записей: на странице появляются кнопки, которые
+            загружают их как обычные файлы; None - без примеров
+
+    Исключения:
+        ParameterError: Если сайт записан не как схема и адрес или каталога нет
+
+    Пример использования:
+        >>> from stt_ru.service import PageOptions
+        >>> PageOptions(embed_from=("https://huggingface.co",)).policy().rsplit("; ", 1)[1]
+        'frame-ancestors https://huggingface.co'
+    """
+
+    embed_from: Sequence[str] = ()
+    notice: str | None = None
+    examples: str | os.PathLike[str] | None = None
+
+    def __post_init__(self) -> None:
+        for origin in self.embed_from:
+            if not _ORIGIN.fullmatch(origin):
+                raise ParameterError(f"Адрес сайта должен быть вида https://example.com: {origin}")
+        if self.examples is not None and not Path(self.examples).is_dir():
+            raise ParameterError(f"Каталога с примерами нет: {self.examples}")
+
+    def policy(self) -> str:
+        """
+        Политика безопасности страницы
+
+        Вывод:
+            str: Значение заголовка Content-Security-Policy
+        """
+        return PAGE_POLICY.format(ancestors=" ".join(self.embed_from) or "'none'")
+
+    def example_files(self) -> dict[str, Path]:
+        """
+        Примеры записей
+
+        Вывод:
+            dict[str, Path]: Файлы каталога по именам, без вложенных каталогов и скрытых файлов
+        """
+        if self.examples is None:
+            return {}
+        return {
+            path.name: path
+            for path in sorted(Path(self.examples).iterdir())
+            if path.is_file() and not path.name.startswith(".")
+        }
+
+
+@dataclass(frozen=True)
 class _Settings:
     jobs: JobQueue
     token: str | None
     max_size: int
+    page: PageOptions
+    examples: dict[str, Path]
 
 
 async def _invalid_request(request: Request, error: Exception) -> JSONResponse:
@@ -120,7 +184,13 @@ async def _invalid_request(request: Request, error: Exception) -> JSONResponse:
     return JSONResponse({"detail": text}, status_code=422)
 
 
-def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 << 20) -> FastAPI:
+def create_app(
+    jobs: JobQueue,
+    *,
+    token: str | None = None,
+    max_size: int = 500 << 20,
+    page: PageOptions | None = None,
+) -> FastAPI:
     """
     Веб-приложение сервиса: страница и REST API
 
@@ -136,6 +206,7 @@ def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 
         jobs (JobQueue): Очередь задач
         token (str): Токен доступа; None или пустая строка - доступ без токена
         max_size (int): Наибольший размер файла, байт
+        page (PageOptions): Настройки страницы; None - значения по умолчанию
 
     Вывод:
         FastAPI: Приложение ASGI
@@ -157,7 +228,8 @@ def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 
         redoc_url=None,
         lifespan=lifespan,
     )
-    app.state.settings = _Settings(jobs, token or None, max_size)
+    page = page or PageOptions()
+    app.state.settings = _Settings(jobs, token or None, max_size, page, page.example_files())
     app.add_exception_handler(RequestValidationError, _invalid_request)
     app.add_middleware(_Guard, max_body=max_size + UPLOAD_OVERHEAD)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -222,8 +294,8 @@ protected = [Depends(_authorize)]
 
 
 @router.get("/", include_in_schema=False)
-def page() -> FileResponse:
-    headers = {"Content-Security-Policy": PAGE_POLICY, "Cache-Control": "no-cache"}
+def page(settings: Settings) -> FileResponse:
+    headers = {"Content-Security-Policy": settings.page.policy(), "Cache-Control": "no-cache"}
     return FileResponse(STATIC / "index.html", headers=headers)
 
 
@@ -244,9 +316,32 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
         max_duration=settings.jobs.max_duration,
         keep=settings.jobs.keep,
         formats=list(FORMATS),
+        notice=settings.page.notice,
+        examples=list(settings.examples),
         diarize=diarize,
         speakers=speakers,
         max_speakers=MAX_SPEAKERS,
+    )
+
+
+@router.get(
+    "/v1/examples/{name}",
+    summary="Пример записи",
+    dependencies=protected,
+    response_class=FileResponse,
+    responses={404: {"description": "Такого примера нет"}},
+)
+def get_example(name: str, settings: Settings) -> FileResponse:
+    path = settings.examples.get(name)
+    if path is None:
+        raise HTTPException(404, "Такого примера нет")
+    kind = mimetypes.guess_type(name)[0] or ""
+    playable = kind.startswith(("audio/", "video/"))
+    return FileResponse(
+        path,
+        media_type=kind if playable else "application/octet-stream",
+        filename=name,
+        content_disposition_type="inline" if playable else "attachment",
     )
 
 

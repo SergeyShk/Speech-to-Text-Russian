@@ -1,0 +1,41 @@
+name: demo
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/sergeyshk/stt-ru
+  SPACE: SergeyShk/stt-ru
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.3
+      - name: Pin image to the released version
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          sed -i "s|^ARG IMAGE=.*|ARG IMAGE=$IMAGE:$TAG|" demo/Dockerfile
+          # Образ выпуска собирает docker.yml, параллельно с этой задачей
+          for attempt in $(seq 1 120); do
+            docker manifest inspect "$IMAGE:$TAG" > /dev/null 2>&1 && exit 0
+            sleep 30
+          done
+          echo "Образа $IMAGE:$TAG нет в реестре" && exit 1
+      - name: Upload demo to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MESSAGE: Update demo to ${{ github.ref_name }}
+        run: |
+          uvx --from huggingface_hub hf repos create "$SPACE" --repo-type space --space-sdk docker --public --exist-ok
+          uvx --from huggingface_hub hf upload "$SPACE" demo . --repo-type space --commit-message "$MESSAGE"

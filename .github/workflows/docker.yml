@@ -5,6 +5,7 @@ on:
     paths:
       - "src/**"
       - "docker/**"
+      - "demo/**"
       - ".dockerignore"
       - "pyproject.toml"
       - "uv.lock"
@@ -80,6 +81,28 @@ jobs:
           done
           docker inspect -f '{{.State.Health.Status}}' watch | grep -x healthy
           docker stop watch
+      # Default-сборщик видит локальный образ: сборщик setup-buildx его не видит
+      - name: Check demo
+        run: |
+          docker buildx build --builder default --build-arg IMAGE=stt-ru:test -t stt-ru:demo demo
+          docker run -d --name demo -p 7860:7860 stt-ru:demo
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' demo)" = healthy ] && break
+            sleep 2
+          done
+          docker inspect -f '{{.State.Health.Status}}' demo | grep -x healthy
+          site=http://127.0.0.1:7860
+          curl -sfI "$site/" | grep -i content-security-policy | grep -F "frame-ancestors https://huggingface.co"
+          curl -sf "$site/v1/info" | tee info.json | jq -e '.diarize and (.notice | length > 0) and (.examples | length == 2) and .max_duration == 600 and .keep == 3600'
+          name="$(jq -r '.examples[0] | @uri' info.json)"
+          curl -sf "$site/v1/examples/$name" -o example.mp3
+          job="$(curl -sf -F file=@example.mp3 "$site/v1/transcriptions" | jq -r .id)"
+          for i in $(seq 1 60); do
+            [ "$(curl -sf "$site/v1/jobs/$job" | jq -r .status)" = done ] && break
+            sleep 1
+          done
+          curl -sf "$site/v1/jobs/$job/result" | jq -e '[.segments[].speaker_id] | unique == [1, 2]'
+          docker stop demo
       - name: Check compose files
         run: docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml config --quiet
 

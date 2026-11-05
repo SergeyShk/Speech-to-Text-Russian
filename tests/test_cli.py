@@ -1082,6 +1082,55 @@ class TestTranscribeChecks:
         assert calls == [[str(files)]]
 
 
+class TestPageOptions:
+    @pytest.fixture
+    def server(self, monkeypatch):
+        runs = []
+        monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: runs.append(app.state.settings))
+        return runs
+
+    def test_passed_to_page(self, fake, server, tmp_path):
+        (tmp_path / "звонок.mp3").write_bytes(b"mp3")
+        main(
+            [
+                "serve",
+                "--embed-from",
+                "https://huggingface.co",
+                "--embed-from",
+                "https://example.com",
+                "--notice",
+                "Записи удаляются",
+                "--examples",
+                str(tmp_path),
+                "-q",
+            ]
+        )
+        ((settings,),) = [server]
+        assert settings.page.notice == "Записи удаляются"
+        assert list(settings.examples) == ["звонок.mp3"]
+        assert "https://huggingface.co https://example.com" in settings.page.policy()
+
+    def test_defaults(self, fake, server):
+        main(["serve", "-q"])
+        assert server[0].page.notice is None
+        assert server[0].examples == {}
+        assert server[0].page.policy().endswith("frame-ancestors 'none'")
+
+    @pytest.mark.parametrize(
+        ("options", "message"),
+        [
+            (["--embed-from", "huggingface.co"], "Адрес сайта должен быть вида"),
+            (["--examples", "/missing/folder"], "Каталога с примерами нет"),
+        ],
+    )
+    def test_wrong_before_model(self, fake, capsys, options, message):
+        with pytest.raises(SystemExit) as caught:
+            main(["serve", *options])
+        assert caught.value.code == 2
+        assert message in capsys.readouterr().err
+        assert fake == []
+
+
 class TestSpeakers:
     def test_transcribe_options(self, fake, files):
         main(["transcribe", str(files), "--diarize", "--speakers", "3", "-q"])
