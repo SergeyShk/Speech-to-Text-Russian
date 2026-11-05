@@ -56,7 +56,7 @@ Documentation = "https://sergeyshk.github.io/Speech-to-Text-Russian/"
 Issues = "https://github.com/SergeyShk/Speech-to-Text-Russian/issues"
 
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
