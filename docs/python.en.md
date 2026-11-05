@@ -78,7 +78,7 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 | `threshold` | float | `0.7` | Voice merging threshold: the higher it is, the fewer speakers |
 | `providers` | list[str] | `None` | ONNX Runtime providers; `None` - the same as for `Transcriber` |
 
-`diarize(samples, sample_rate, speakers=None)` takes a one-dimensional float32 sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap.
+`diarize(samples, sample_rate, speakers=None)` takes a one-dimensional float32 sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap. To recognize with your own threshold, set `transcriber.diarizer = Diarizer(threshold=0.9)` and call it with `diarize=True`.
 
 ## Export { #export }
 
