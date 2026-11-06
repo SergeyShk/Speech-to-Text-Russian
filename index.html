@@ -1001,13 +1001,14 @@
 <li>запускать все это в <a href="docker/">Docker</a>, в том числе на GPU NVIDIA</li>
 </ul>
 <h2 id="_2">Установка<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
-<p>Требуется Python 3.11 или новее.</p>
+<p>Требуется Python от 3.11 до 3.14: для 3.15 у ONNX Runtime пока нет сборок.</p>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>stt-ru
 </code></pre></div>
 <p>Дополнения для форматов через ffmpeg, веб-сервиса и оценки качества, GPU и кэш моделей описаны на странице <a href="installation/">Установка</a>.</p>
 <h2 id="_3">Быстрый старт<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span class="w">                     </span><span class="c1"># текст в консоль</span>
 stt-ru<span class="w"> </span>transcribe<span class="w"> </span>calls/<span class="w"> </span>-o<span class="w"> </span>out/<span class="w"> </span>-f<span class="w"> </span>srt,csv<span class="w">    </span><span class="c1"># результаты каждого файла в out/</span>
+stt-ru<span class="w"> </span>transcribe<span class="w"> </span>meeting.mp3<span class="w"> </span>--diarize<span class="w">        </span><span class="c1"># разделение говорящих</span>
 stt-ru<span class="w"> </span>serve<span class="w">                                   </span><span class="c1"># веб-интерфейс на http://127.0.0.1:8000</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">stt_ru</span><span class="w"> </span><span class="kn">import</span> <span class="n">Transcriber</span>
@@ -1027,8 +1028,8 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 <p>При первом запуске модель (около 230 МБ) скачивается с Hugging Face. Больше примеров - в <a href="examples/">ноутбуках</a>.</p>
 <h2 id="_4">Как это работает<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Файл читается целиком: WAV, FLAC, OGG, MP3 и другие несжатые форматы - библиотекой soundfile, M4A, AAC, AMR, WMA и звук из видео - программой ffmpeg.</li>
-<li>Каналы стереозаписи распознаются по отдельности: в записи разговора каждый канал - свой говорящий («Канал 0», «Канал 1»). Каналы, которые отличаются только громкостью и небольшим сдвигом, распознаются один раз.</li>
+<li>Файл читается целиком: WAV, FLAC, OGG, MP3 и другие форматы, которые она читает, - библиотекой soundfile, M4A, AAC, AMR, WMA и звук из видео - программой ffmpeg.</li>
+<li>Каналы стереозаписи распознаются по отдельности: в записи разговора каждый канал - свой говорящий («Канал 0», «Канал 1»). Каналы, которые отличаются только громкостью и небольшим сдвигом, распознаются один раз, каналы одного источника с разной волной сводятся в один, а канал без звука пропускается.</li>
 <li>Поиск речи <a href="models/#vad">Silero VAD</a> режет запись на фрагменты речи не длиннее 20 с, модель распознает каждый фрагмент.</li>
 <li>С <code>--diarize</code> запись с одной дорожкой делится на реплики говорящих, и фрагменты подписываются «Говорящий N».</li>
 <li>Результат - фрагменты с началом, концом, каналом и текстом по времени начала. Записи длиннее 10 минут распознаются окнами около 10 минут с границей в паузе: так распознаванию нужно меньше памяти.</li>

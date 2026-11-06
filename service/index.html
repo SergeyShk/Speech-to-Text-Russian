@@ -1059,11 +1059,11 @@
 stt-ru<span class="w"> </span>serve<span class="w">                                         </span><span class="c1"># http://127.0.0.1:8000</span>
 <span class="nv">STT_RU_TOKEN</span><span class="o">=</span>my-secret-token<span class="w"> </span>stt-ru<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>-j<span class="w"> </span><span class="m">2</span><span class="w">    </span><span class="c1"># доступ по сети с токеном</span>
 </code></pre></div>
-<p>Описание REST API с примерами запросов открывается на <code>/docs</code>.</p>
+<p>Описание REST API с примерами запросов открывается на <code>/docs</code>. Эта страница берет Swagger UI из сети: без интернета она пуста, а схема остается на <code>/openapi.json</code>.</p>
 <h2 id="-_1">Веб-интерфейс<a class="headerlink" href="#-_1" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Загрузка перетаскиванием или выбором, несколько файлов подряд, полоса загрузки.</li>
-<li>Перед загрузкой можно включить разделение говорящих и указать их число для этой записи.</li>
+<li>Перед загрузкой можно включить разделение говорящих и указать их число для этой записи. Оно работает на записи с одной дорожкой: если каналы разные, страница об этом скажет.</li>
 <li>Список задач этого браузера с состоянием: в очереди и место в ней, распознается, готово, ошибка.</li>
 <li>Форма волны по каналам с фрагментами каждого говорящего, плеер и таблица фрагментов: щелчок по строке или по форме волны переходит к месту записи, текущий фрагмент подсвечивается.</li>
 <li>Скачивание результата в TXT, JSON, JSONL, SRT, VTT, ASS и CSV, удаление задачи.</li>
@@ -1181,7 +1181,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 <tr>
 <td style="text-align: left;"><code>DELETE /v1/jobs/{id}</code></td>
-<td style="text-align: left;">Удаляет задачу и ее файлы</td>
+<td style="text-align: left;">Удаляет задачу и ее файлы; идущая задача останавливается на ближайшем шаге</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/info</code></td>
@@ -1193,7 +1193,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 </tbody>
 </table>
-<p>Задача - JSON с полями <code>id</code>, <code>status</code> (<code>queued</code> - в очереди, <code>running</code> - распознается, <code>done</code> - готово, <code>failed</code> - ошибка), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (когда задача будет удалена), <code>position</code> (сколько задач перед ней), <code>duration</code>, <code>channels</code>, <code>segments</code> (число фрагментов), <code>diarize</code> и <code>speakers</code> (разделение говорящих этой задачи) и <code>error</code>. Ошибки - <code>{"detail": "..."}</code>: 401 без токена, 404 для удаленной задачи, 400 для неизвестного формата результата, 409 для неготовой или упавшей, 413 для большого файла, 422 для неверных параметров, 503 при полной очереди.</p>
+<p>Задача - JSON с полями <code>id</code>, <code>status</code> (<code>queued</code> - в очереди, <code>running</code> - распознается, <code>done</code> - готово, <code>failed</code> - ошибка), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (когда задача будет удалена), <code>position</code> (сколько задач перед ней), <code>duration</code>, <code>channels</code>, <code>segments</code> (число фрагментов), <code>diarize</code> и <code>speakers</code> (разделение говорящих этой задачи), <code>warning</code> (пояснение: например, разделение не выполнялось, так как каналы разные, и тогда <code>diarize</code> у готовой задачи <code>false</code>) и <code>error</code>. Ошибки - <code>{"detail": "..."}</code>: 401 без токена, 404 для удаленной задачи, 400 для неизвестного формата результата и неразобранной загрузки, 409 для неготовой или упавшей, 413 для большого файла, 422 для неверных параметров, 503 при полной очереди, 507 при нехватке места на диске.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">token</span><span class="o">=</span><span class="s2">"Authorization: Bearer my-secret-token"</span>
 <span class="nv">job</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>-F<span class="w"> </span><span class="nv">file</span><span class="o">=</span>@call.wav<span class="w"> </span>http://127.0.0.1:8000/v1/transcriptions<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span>.id<span class="k">)</span>
 curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>http://127.0.0.1:8000/v1/jobs/<span class="nv">$job</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.status
@@ -1205,7 +1205,7 @@ curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span>
 
 <span class="n">api</span> <span class="o">=</span> <span class="s2">"http://127.0.0.1:8000/v1"</span>
 <span class="n">headers</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"Authorization"</span><span class="p">:</span> <span class="s2">"Bearer my-secret-token"</span><span class="p">}</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"call.wav"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"meeting.mp3"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
         <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/transcriptions"</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="n">file</span><span class="p">},</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s2">"speakers"</span><span class="p">:</span> <span class="mi">2</span><span class="p">},</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span>
     <span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
@@ -1227,6 +1227,7 @@ curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span>
 <span class="n">app</span> <span class="o">=</span> <span class="n">create_app</span><span class="p">(</span><span class="n">jobs</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">"my-secret-token"</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span><span class="p">)</span>
 <span class="n">uvicorn</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s2">"0.0.0.0"</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8000</span><span class="p">)</span>
 </code></pre></div>
+<p>Каталог <code>/data/stt</code> должен существовать. Свой объект вместо <code>Transcriber</code> должен поддерживать <code>speaker_options</code>, <code>load</code>, <code>recognizer.model</code> и <code>transcribe_audio</code> с параметрами <code>diarize</code>, <code>speakers</code>, <code>should_stop</code> и <code>on_warning</code>.</p>
 
 
 

@@ -1059,11 +1059,11 @@
 stt-ru<span class="w"> </span>serve<span class="w">                                         </span><span class="c1"># http://127.0.0.1:8000</span>
 <span class="nv">STT_RU_TOKEN</span><span class="o">=</span>my-secret-token<span class="w"> </span>stt-ru<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>-j<span class="w"> </span><span class="m">2</span><span class="w">    </span><span class="c1"># network access with a token</span>
 </code></pre></div>
-<p>The REST API reference with request examples is at <code>/docs</code>.</p>
+<p>The REST API reference with request examples is at <code>/docs</code>. This page takes Swagger UI from the network: without internet it is empty, and the schema remains at <code>/openapi.json</code>.</p>
 <h2 id="web-interface">Web interface<a class="headerlink" href="#web-interface" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Upload by drag and drop or by choosing files, several files in a row, an upload progress bar.</li>
-<li>Before uploading, speaker separation can be turned on and the number of speakers set for this recording.</li>
+<li>Before uploading, speaker separation can be turned on and the number of speakers set for this recording. It works on a single-track recording: if the channels differ, the page says so.</li>
 <li>The list of jobs of this browser with their state: queued and the place in the queue, running, done, failed.</li>
 <li>A waveform per channel with the segments of each speaker, a player and a table of segments: clicking a row or the waveform jumps to that place in the recording, and the current segment is highlighted.</li>
 <li>Downloading the result in TXT, JSON, JSONL, SRT, VTT, ASS and CSV, deleting a job.</li>
@@ -1181,7 +1181,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 <tr>
 <td style="text-align: left;"><code>DELETE /v1/jobs/{id}</code></td>
-<td style="text-align: left;">Deletes the job and its files</td>
+<td style="text-align: left;">Deletes the job and its files; a running job stops at the nearest step</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>GET /v1/info</code></td>
@@ -1193,7 +1193,7 @@ stt-ru<span class="w"> </span>serve<span class="w">                             
 </tr>
 </tbody>
 </table>
-<p>A job is JSON with the fields <code>id</code>, <code>status</code> (<code>queued</code>, <code>running</code>, <code>done</code>, <code>failed</code>), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (when the job will be deleted), <code>position</code> (how many jobs are ahead), <code>duration</code>, <code>channels</code>, <code>segments</code> (number of segments), <code>diarize</code> and <code>speakers</code> (speaker separation of this job) and <code>error</code>. Errors are <code>{"detail": "..."}</code> with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.</p>
+<p>A job is JSON with the fields <code>id</code>, <code>status</code> (<code>queued</code>, <code>running</code>, <code>done</code>, <code>failed</code>), <code>filename</code>, <code>size</code>, <code>created</code>, <code>started</code>, <code>finished</code>, <code>expires</code> (when the job will be deleted), <code>position</code> (how many jobs are ahead), <code>duration</code>, <code>channels</code>, <code>segments</code> (number of segments), <code>diarize</code> and <code>speakers</code> (speaker separation of this job), <code>warning</code> (an explanation: for example, separation was not performed because the channels differ, and then <code>diarize</code> of the finished job is <code>false</code>) and <code>error</code>. Errors are <code>{"detail": "..."}</code> with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format and an unparsable upload, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full, 507 when the disk is out of space.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">token</span><span class="o">=</span><span class="s2">"Authorization: Bearer my-secret-token"</span>
 <span class="nv">job</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>-F<span class="w"> </span><span class="nv">file</span><span class="o">=</span>@call.wav<span class="w"> </span>http://127.0.0.1:8000/v1/transcriptions<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span>.id<span class="k">)</span>
 curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$token</span><span class="s2">"</span><span class="w"> </span>http://127.0.0.1:8000/v1/jobs/<span class="nv">$job</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.status
@@ -1205,7 +1205,7 @@ curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span>
 
 <span class="n">api</span> <span class="o">=</span> <span class="s2">"http://127.0.0.1:8000/v1"</span>
 <span class="n">headers</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"Authorization"</span><span class="p">:</span> <span class="s2">"Bearer my-secret-token"</span><span class="p">}</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"call.wav"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"meeting.mp3"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">job</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
         <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">api</span><span class="si">}</span><span class="s2">/transcriptions"</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s2">"file"</span><span class="p">:</span> <span class="n">file</span><span class="p">},</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s2">"speakers"</span><span class="p">:</span> <span class="mi">2</span><span class="p">},</span> <span class="n">headers</span><span class="o">=</span><span class="n">headers</span>
     <span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
@@ -1227,6 +1227,7 @@ curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span>
 <span class="n">app</span> <span class="o">=</span> <span class="n">create_app</span><span class="p">(</span><span class="n">jobs</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="s2">"my-secret-token"</span><span class="p">,</span> <span class="n">max_size</span><span class="o">=</span><span class="mi">200</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span><span class="p">)</span>
 <span class="n">uvicorn</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s2">"0.0.0.0"</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8000</span><span class="p">)</span>
 </code></pre></div>
+<p>The <code>/data/stt</code> folder must exist. Your own object instead of <code>Transcriber</code> must support <code>speaker_options</code>, <code>load</code>, <code>recognizer.model</code> and <code>transcribe_audio</code> with the <code>diarize</code>, <code>speakers</code>, <code>should_stop</code> and <code>on_warning</code> parameters.</p>
 
 
 

@@ -1088,7 +1088,7 @@ docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </sp
 </code></pre></div>
 <p>Команды в контейнере работают от пользователя с uid 1000. Чтобы записывать результаты (<code>-o</code>, <code>--summary</code>) или удалять исходники в каталоге другого пользователя, добавьте <code>--user "$(id -u):$(id -g)"</code>.</p>
 <h2 id="models">Другие модели<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
-<p>Другие модели скачиваются при первом запуске в <code>/opt/huggingface</code> внутри контейнера и пропадают вместе с ним. Чтобы не скачивать их заново после пересоздания контейнера, подключите к <code>/opt/huggingface</code> именованный том: при первом подключении Docker скопирует в него модель из образа. Том хранит файлы и после обновления образа; если в новой версии сменится модель по умолчанию, она скачается в том.</p>
+<p>Другие модели скачиваются при первом запуске в <code>/opt/huggingface</code> внутри контейнера и пропадают вместе с ним. Чтобы не скачивать их заново после пересоздания контейнера, подключите к <code>/opt/huggingface</code> именованный том: при первом подключении Docker скопирует в него модель из образа. Том хранит файлы и после обновления образа; если в новой версии сменится модель по умолчанию, она скачается в том. Том закрывает модели из образа: в томе от прошлой версии модели разделения говорящих докачаются при первом использовании, а без сети такие задачи завершатся ошибкой.</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>-p<span class="w"> </span><span class="m">8000</span>:8000<span class="w"> </span>-e<span class="w"> </span><span class="nv">STT_RU_TOKEN</span><span class="o">=</span>my-secret-token<span class="w"> </span>-v<span class="w"> </span>stt-models:/opt/huggingface<span class="w"> </span>ghcr.io/sergeyshk/stt-ru<span class="w"> </span>serve<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>-m<span class="w"> </span>t-tech/t-one
 </code></pre></div>
 <h2 id="docker-compose">Docker Compose<a class="headerlink" href="#docker-compose" title="Permanent link">&para;</a></h2>
@@ -1096,6 +1096,7 @@ docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </sp
 <div class="highlight"><pre><span></span><code><span class="nb">echo</span><span class="w"> </span><span class="s2">"STT_RU_TOKEN=my-secret-token"</span><span class="w"> </span>&gt;<span class="w"> </span>docker/.env
 docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker/compose.yaml<span class="w"> </span>up<span class="w"> </span>-d
 </code></pre></div>
+<p>Чтобы сервис разделял говорящих по умолчанию, добавьте в <code>compose.yaml</code> строку <code>command: ["serve", "--host", "0.0.0.0", "--diarize"]</code>. Сведения о моделях и их лицензиях лежат в образе в файле <code>/opt/stt-ru/MODELS.md</code>.</p>
 <h2 id="gpu">GPU<a class="headerlink" href="#gpu" title="Permanent link">&para;</a></h2>
 <p>Образ <code>-gpu</code> распознает на NVIDIA GPU через CUDA 13. Нужны:</p>
 <ul>

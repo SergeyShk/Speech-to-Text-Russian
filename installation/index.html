@@ -1014,7 +1014,7 @@
 <p>Библиотеку и CLI <code>stt-ru</code> можно установить с помощью <code>pip</code> или из репозитория проекта через <code>git</code>. Готовый Docker-образ описан на странице <a href="../docker/">Docker</a>.</p>
 <h2 id="_2">Зависимости<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>python</code> - 3.11 и выше</li>
+<li><code>python</code> - от 3.11 до 3.14: для 3.15 у ONNX Runtime пока нет сборок</li>
 <li><a href="https://github.com/istupakov/onnx-asr"><code>onnx-asr</code></a> - 0.12, с ONNX Runtime для CPU и загрузкой моделей с Hugging Face</li>
 <li><code>numpy</code></li>
 <li><code>soundfile</code></li>
@@ -1060,10 +1060,11 @@
 <p>WAV, FLAC, OGG (в том числе Opus), MP3, AIFF, AU, CAF и W64 читает библиотека soundfile. M4A, AAC, AMR, WMA, звуку из видео, записям с частотой, которую модель не принимает, и файлам без длины записи в заголовке нужен ffmpeg. stt-ru ищет его в <code>PATH</code>, затем в пакете <code>imageio-ffmpeg</code> из дополнения <code>ffmpeg</code>; путь можно задать параметром <code>--ffmpeg</code>. Если ffmpeg нужен, но не найден, файл не распознается, а в сообщении будет подсказка, что установить.</p>
 </div>
 <h2 id="models">Модели<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
-<p>Модель скачивается с Hugging Face при первом распознавании и хранится в его кэше: модель по умолчанию <code>gigaam-v3-e2e-rnnt</code> в квантизации int8 вместе с Silero VAD занимает около 230 МБ. Кэш лежит в <code>~/.cache/huggingface</code>, другой каталог задает переменная окружения <code>HF_HOME</code>:</p>
+<p>Модель скачивается с Hugging Face при первом распознавании и хранится в его кэше: модель по умолчанию <code>gigaam-v3-e2e-rnnt</code> в квантизации int8 вместе с Silero VAD занимает около 230 МБ, модели <a href="../models/#diarization">разделения говорящих</a> - еще около 35 МБ при первом использовании. Кэш лежит в <code>~/.cache/huggingface</code>, другой каталог задает переменная окружения <code>HF_HOME</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">HF_HOME</span><span class="o">=</span>/data/models
 </code></pre></div>
-<p>Модель из кэша работает без сети. Для компьютера без интернета скопируйте на него весь каталог кэша - в нем и модель, и Silero VAD - и укажите его в <code>HF_HOME</code> (см. также <a href="../models/#local">Модели</a>).</p>
+<p>Модель из кэша работает без сети. Для компьютера без интернета скопируйте на него весь каталог кэша - в нем и модель, и Silero VAD - и укажите его в <code>HF_HOME</code> (см. также <a href="../models/#local">Модели</a>). Чтобы в кэше были и модели разделения говорящих, перед копированием один раз запустите распознавание с <code>--diarize</code>.</p>
+<p>stt-ru выключает телеметрию ONNX Runtime: идентификатор устройства не сохраняется, сведения об устройстве никуда не отправляются. Если в своей программе <code>onnxruntime</code> импортируется раньше <code>stt_ru</code>, задайте <code>ORT_DISABLE_TELEMETRY=1</code> сами.</p>
 <h2 id="devices">GPU и другие устройства<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>По умолчанию модель работает на CPU через пакет <code>onnxruntime</code>. Для других устройств его заменяют другой сборкой ONNX Runtime: для NVIDIA GPU - той же версии, для DirectML - последней (onnx-asr работает с ONNX Runtime 1.18.1 и новее):</p>
 <table>

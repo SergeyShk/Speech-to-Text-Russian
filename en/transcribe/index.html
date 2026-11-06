@@ -1189,10 +1189,12 @@ stt-ru<span class="w"> </span>transcribe<span class="w"> </span>call.wav<span cl
 </code></pre></div>
 <ul>
 <li>If the number of speakers is known, pass it in <code>--speakers</code>: this also finds a person who speaks very little, about 1-2% of the time. A number below the real one merges people. One or two above it does almost no harm but adds extra speakers with a few segments; a much higher number splits people. There can also be fewer speakers than requested: a voice that never outweighs the others does not reach the result.</li>
-<li>Different channels of a stereo recording already separate speakers: for them <code>--diarize</code> only prints a warning. To separate speakers in a mixed recording, use <code>--mono</code>.</li>
+<li>Different channels of a stereo recording already separate speakers: for them <code>--diarize</code> only prints a warning. To separate speakers in a mixed recording, use <code>--mono</code>. A stereo recording of one source (a podcast, for example) and a recording with an empty second channel are separated as usual.</li>
+<li>Existing results are not recalculated: to separate speakers in files already transcribed, use <code>--overwrite</code>.</li>
 <li>Models without word times (Whisper) give a whole segment to whoever speaks longest in it.</li>
 <li>Transcription with <code>--diarize</code> takes about one and a half to two times longer. The models it needs are on the <a href="../models/#diarization">Models</a> page.</li>
 </ul>
+<p>Long turns of 2-4 people in a clean recording separate best, even at a low bitrate. Phone arguments, turns shorter than 1-2 s, strong noise and echo separate worse. Short "uh-huh" and "yes" over someone else's speech usually go to the main speaker. In a radio show with calls, «Говорящий N» is not necessarily one person: different callers can get one number, and jingles and ads the host's number.</p>
 <h2 id="delete-source">Deleting sources<a class="headerlink" href="#delete-source" title="Permanent link">&para;</a></h2>
 <p><code>--delete-source</code> deletes a file after all its results and summary rows are written. It needs <code>--output-dir</code> or <code>--summary</code>, so that the result is not lost. A file that already has results is not deleted: it may be another recording with the same name. A file that changed while it was being transcribed (it is still being copied) is not deleted either. A failed deletion or a changed file is an error of that file.</p>
 <h2 id="watch">Folder monitoring<a class="headerlink" href="#watch" title="Permanent link">&para;</a></h2>

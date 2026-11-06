@@ -1037,7 +1037,7 @@
 <div class="admonition info">
 <p><strong>stt_ru.Transcriber</strong></p>
 </div>
-<p><code>Transcriber</code> загружает модель один раз и распознает ею файлы и записи в памяти. Каналы стереозаписи распознаются отдельно, записи длиннее 10 минут - окнами около 10 минут с границей в паузе. Один объект можно использовать из нескольких потоков.</p>
+<p><code>Transcriber</code> загружает модель один раз и распознает ею файлы и записи в памяти. Каналы стереозаписи распознаются отдельно, каналы одного источника сводятся в один, записи длиннее 10 минут - окнами около 10 минут с границей в паузе. Один объект можно использовать из нескольких потоков.</p>
 <table>
 <thead>
 <tr>
@@ -1100,7 +1100,7 @@
 <td style="text-align: left;"><code>speakers</code></td>
 <td style="text-align: left;">int</td>
 <td style="text-align: left;"><code>None</code></td>
-<td style="text-align: left;">Точное число говорящих от 1 до 100, включает <code>diarize</code>; <code>None</code> - определяется по записи</td>
+<td style="text-align: left;">Точное число говорящих, целое от 1 до 100, включает <code>diarize</code>; <code>None</code> - определяется по записи</td>
 </tr>
 </tbody>
 </table>
@@ -1117,8 +1117,8 @@
 <td style="text-align: left;">Распознает файл и возвращает <code>Transcript</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>transcribe_audio(audio, source=None, *, diarize=None, speakers=None)</code></td>
-<td style="text-align: left;">Распознает запись в памяти (<code>Audio</code>)</td>
+<td style="text-align: left;"><code>transcribe_audio(audio, source=None, *, diarize=None, speakers=None, should_stop=None, on_warning=None)</code></td>
+<td style="text-align: left;">Распознает запись в памяти (<code>Audio</code>); <code>should_stop</code> вызывается между шагами, и <code>True</code> прерывает работу с <code>StoppedError</code>; <code>on_warning</code> получает текст предупреждения о числе говорящих вместо <code>warnings.warn</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>speaker_options(diarize=None, speakers=None)</code></td>
@@ -1137,7 +1137,7 @@
 <span class="o">&gt;&gt;&gt;</span> <span class="n">result</span><span class="o">.</span><span class="n">duration</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">channels</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">segments</span><span class="p">)</span>
 <span class="p">(</span><span class="mf">15.751</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
 <span class="o">&gt;&gt;&gt;</span> <span class="n">result</span><span class="o">.</span><span class="n">segments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-<span class="n">Segment</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="mf">0.994</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="mf">9.054</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="s1">'Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии.'</span><span class="p">,</span> <span class="n">channel</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">Segment</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="mf">0.994</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="mf">9.054</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="s1">'Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии.'</span><span class="p">,</span> <span class="n">channel</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">speaker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="transcript">Результат<a class="headerlink" href="#transcript" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
@@ -1216,7 +1216,7 @@
 <td style="text-align: left;"><code>threshold</code></td>
 <td style="text-align: left;">float</td>
 <td style="text-align: left;"><code>0.7</code></td>
-<td style="text-align: left;">Порог сведения голосов: чем больше, тем меньше говорящих</td>
+<td style="text-align: left;">Порог сведения голосов: чем больше, тем охотнее они сливаются</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>providers</code></td>
@@ -1226,7 +1226,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>diarize(samples, sample_rate, speakers=None)</code> принимает одномерный массив отсчетов float32 и возвращает список <code>Turn</code> по времени начала: <code>start</code> и <code>end</code> в секундах, <code>speaker</code> - номер с единицы. Реплики разных людей могут перекрываться. Чтобы распознавание работало со своим порогом, задайте <code>transcriber.diarizer = Diarizer(threshold=0.9)</code> и вызывайте его с <code>diarize=True</code>.</p>
+<p><code>diarize(samples, sample_rate, speakers=None, *, speech=None, should_stop=None, on_warning=None)</code> принимает одномерный массив отсчетов float32 и возвращает список <code>Turn</code> по времени начала: <code>start</code> и <code>end</code> в секундах, <code>speaker</code> - номер с единицы. Реплики разных людей могут перекрываться. <code>speech</code> - отрезки настоящей речи в секундах: голос тем важнее, чем больше его в них, поэтому музыка не занимает место человека; <code>Transcriber</code> передает сюда распознанные фрагменты. Чтобы распознавание работало со своим порогом, задайте <code>transcriber.diarizer = Diarizer(threshold=0.9)</code> и вызывайте его с <code>diarize=True</code>.</p>
 <h2 id="export">Экспорт<a class="headerlink" href="#export" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p><strong>stt_ru.export</strong></p>
@@ -1315,6 +1315,11 @@
 <td style="text-align: left;"><code>MissingDependencyError</code></td>
 <td style="text-align: left;"><code>ImportError</code></td>
 <td style="text-align: left;">Нет пакета из дополнения, например <code>jiwer</code> для оценки качества</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>StoppedError</code></td>
+<td style="text-align: left;">-</td>
+<td style="text-align: left;">Распознавание прервано через <code>should_stop</code></td>
 </tr>
 </tbody>
 </table>

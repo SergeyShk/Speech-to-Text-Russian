@@ -1014,7 +1014,7 @@
 <p>The library and the <code>stt-ru</code> CLI can be installed with <code>pip</code> or from the project repository with <code>git</code>. The ready-made Docker image is described on the <a href="../docker/">Docker</a> page.</p>
 <h2 id="dependencies">Dependencies<a class="headerlink" href="#dependencies" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>python</code> - 3.11 or newer</li>
+<li><code>python</code> - 3.11 to 3.14: ONNX Runtime has no builds for 3.15 yet</li>
 <li><a href="https://github.com/istupakov/onnx-asr"><code>onnx-asr</code></a> - 0.12, with ONNX Runtime for CPU and model downloads from Hugging Face</li>
 <li><code>numpy</code></li>
 <li><code>soundfile</code></li>
@@ -1060,10 +1060,11 @@
 <p>WAV, FLAC, OGG (including Opus), MP3, AIFF, AU, CAF and W64 are read by the soundfile library. M4A, AAC, AMR, WMA, the sound of videos, recordings with a sample rate the model does not accept and files without the recording length in the header need ffmpeg. stt-ru looks for it in <code>PATH</code>, then in the <code>imageio-ffmpeg</code> package from the <code>ffmpeg</code> extra; the path can be set with <code>--ffmpeg</code>. If ffmpeg is needed but not found, the file is not transcribed and the message says what to install.</p>
 </div>
 <h2 id="models">Models<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
-<p>A model is downloaded from Hugging Face on the first transcription and kept in its cache: the default model <code>gigaam-v3-e2e-rnnt</code> in int8 quantization together with Silero VAD takes about 230 MB. The cache is in <code>~/.cache/huggingface</code>; the <code>HF_HOME</code> environment variable sets another folder:</p>
+<p>A model is downloaded from Hugging Face on the first transcription and kept in its cache: the default model <code>gigaam-v3-e2e-rnnt</code> in int8 quantization together with Silero VAD takes about 230 MB, and the <a href="../models/#diarization">speaker separation</a> models about 35 MB more on first use. The cache is in <code>~/.cache/huggingface</code>; the <code>HF_HOME</code> environment variable sets another folder:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">HF_HOME</span><span class="o">=</span>/data/models
 </code></pre></div>
-<p>A model from the cache works without network. For a computer without internet, copy the whole cache folder to it - it holds both the model and Silero VAD - and point <code>HF_HOME</code> to it (see also <a href="../models/#local">Models</a>).</p>
+<p>A model from the cache works without network. For a computer without internet, copy the whole cache folder to it - it holds both the model and Silero VAD - and point <code>HF_HOME</code> to it (see also <a href="../models/#local">Models</a>). To have the speaker separation models in the cache too, run a transcription with <code>--diarize</code> once before copying.</p>
+<p>stt-ru turns off ONNX Runtime telemetry: no device ID is saved and no device information is sent anywhere. If your own program imports <code>onnxruntime</code> before <code>stt_ru</code>, set <code>ORT_DISABLE_TELEMETRY=1</code> yourself.</p>
 <h2 id="devices">GPUs and other devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h2>
 <p>By default the model runs on the CPU with the <code>onnxruntime</code> package. For other devices it is replaced with another ONNX Runtime build: of the same version for NVIDIA GPUs, the latest one for DirectML (onnx-asr works with ONNX Runtime 1.18.1 and newer):</p>
 <table>
