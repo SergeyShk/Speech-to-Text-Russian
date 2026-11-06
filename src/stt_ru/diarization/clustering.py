@@ -15,6 +15,8 @@ MAX_SPEAKERS = 100
 # Больше этого числа сверх найденного лишние говорящие заметно дробят людей
 EXTRA_SPEAKERS = 3
 LLOYD_STEPS = 30
+# Центры ближе этого косинусного расстояния - части одного человека, а не разные люди
+MIN_CENTER_DISTANCE = 0.15
 
 
 def cluster(
@@ -31,9 +33,10 @@ def cluster(
         пока расстояние между ними не больше threshold. Кластеры с долей веса меньше MIN_SHARE
         присоединяются к ближайшему большому. С точным числом кластеров вместо этого остаются
         speakers самых весомых, а если их меньше, разбиение продолжается до этого числа; затем
-        векторы несколько раз перераспределяются между центрами. Если векторов больше
-        MAX_VECTORS, кластеризуются равномерно выбранные MAX_VECTORS, а остальные относятся
-        к ближайшему центру. Результат не зависит от случайности
+        векторы несколько раз перераспределяются между центрами, если от этого не пропадает
+        кластер и центры не сходятся. Если векторов больше MAX_VECTORS, кластеризуются
+        равномерно выбранные MAX_VECTORS, а остальные относятся к ближайшему центру.
+        Результат не зависит от случайности
 
     Аргументы:
         vectors (numpy.ndarray): Нормированные векторы, форма (число векторов, размерность)
@@ -167,15 +170,28 @@ def _closest(vectors: np.ndarray, members: np.ndarray, labels: np.ndarray) -> np
 def _refined(vectors: np.ndarray, labels: np.ndarray, weights: np.ndarray) -> np.ndarray:
     # Если при пороге двое слиплись, второй кластер мелкий: перераспределение возвращает ему людей
     scale = np.maximum(weights, 1e-6)[:, None]
+    refined = labels
     for _ in range(LLOYD_STEPS):
-        kept = np.unique(labels)
-        centers = np.stack([np.sum((vectors * scale)[labels == label], axis=0) for label in kept])
-        centers /= np.maximum(np.linalg.norm(centers, axis=1, keepdims=True), 1e-9)
+        kept, centers = _weighted_centers(vectors, refined, scale)
         moved = kept[(vectors @ centers.T).argmax(axis=1)]
-        if np.array_equal(moved, labels):
+        if np.array_equal(moved, refined):
             break
-        labels = moved
-    return labels
+        refined = moved
+    kept, centers = _weighted_centers(vectors, refined, scale)
+    # Мелкий кластер рядом с крупным мог забрать половину речи того же человека
+    similar = centers @ centers.T
+    np.fill_diagonal(similar, -1.0)
+    if len(kept) < len(np.unique(labels)) or 1 - similar.max() < MIN_CENTER_DISTANCE:
+        return labels
+    return refined
+
+
+def _weighted_centers(
+    vectors: np.ndarray, labels: np.ndarray, scale: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    kept = np.unique(labels)
+    centers = np.stack([np.sum((vectors * scale)[labels == label], axis=0) for label in kept])
+    return kept, centers / np.maximum(np.linalg.norm(centers, axis=1, keepdims=True), 1e-9)
 
 
 def _absorb_small(

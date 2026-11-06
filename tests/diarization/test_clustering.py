@@ -132,6 +132,22 @@ def test_refining_keeps_stable_split():
     assert clustering._refined(vectors, labels, np.ones(20)).tolist() == labels.tolist()
 
 
+def test_refining_does_not_split_one_person():
+    # Без проверки центров мелкий кластер забирает половину человека, чей голос звучит по-разному
+    near = [[np.cos(a), np.sin(a)] for a in np.radians([14.0, -14.0, 36.0])]
+    vectors = np.array([near[0]] * 15 + [near[1]] * 65 + [near[2]])
+    labels = np.array([0] * 80 + [1])
+    assert clustering._refined(vectors, labels, np.ones(81)).tolist() == labels.tolist()
+
+
+def test_refining_keeps_cluster():
+    # Первый кластер целиком уходит к соседям, а говорящих должно остаться столько же
+    vectors = np.array([[1.0, 0.0], [0.0, 1.0], [0.9, 0.44], [0.44, 0.9]])
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+    labels = np.array([0, 0, 1, 2])
+    assert clustering._refined(vectors, labels, np.ones(4)).tolist() == labels.tolist()
+
+
 def test_zero_weights_are_equal():
     assert cluster(groups(5, 7), weights=np.zeros(12)).tolist() == [0] * 5 + [1] * 7
 
