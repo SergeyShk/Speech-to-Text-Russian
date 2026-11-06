@@ -4,7 +4,12 @@
 # Автор: Шкарин Сергей <kouki.sergey@gmail.com>
 # URL: <https://github.com/SergeyShk/Speech-to-Text-Russian>
 
+import os
 from importlib.metadata import PackageNotFoundError, version
+
+# До импорта onnxruntime: иначе он пишет идентификатор устройства в домашний каталог и отправляет
+# сведения об устройстве в Microsoft, а на выходе может зависнуть, дожидаясь отправки
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
 from .pipeline import Transcriber
 from .result import Segment, Transcript

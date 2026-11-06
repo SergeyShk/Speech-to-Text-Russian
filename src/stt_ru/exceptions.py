@@ -16,3 +16,7 @@ class ParameterError(SttRuError, ValueError):
 
 class MissingDependencyError(SttRuError, ImportError):
     """Нет дополнительной зависимости"""
+
+
+class StoppedError(SttRuError):
+    """Распознавание остановлено по запросу"""
