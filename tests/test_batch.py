@@ -400,7 +400,9 @@ class TestBatch:
         )
         assert (report.skipped, report.done) == ([calls / "b.MP3"], [calls / "a.wav"])
         assert transcriber.calls == [calls / "a.wav"]
-        assert f"{calls / 'b.MP3'}: пропущен, результаты уже есть" in messages
+        assert (
+            f"{calls / 'b.MP3'}: пропущен, результаты уже есть (--overwrite - заново)" in messages
+        )
 
     def test_skipped_source_kept(self, calls, tmp_path):
         touch(tmp_path / "out" / "a.txt")
@@ -411,7 +413,9 @@ class TestBatch:
         )  # fmt: skip
         assert batch.run(find_jobs([calls / "a.wav"])).skipped == [calls / "a.wav"]
         assert (calls / "a.wav").exists()
-        assert messages == [f"{calls / 'a.wav'}: пропущен, результаты уже есть, исходник оставлен"]
+        assert messages == [
+            f"{calls / 'a.wav'}: пропущен, результаты уже есть, исходник оставлен (--overwrite - заново)"
+        ]
 
     def test_overwrite(self, calls, tmp_path):
         out = tmp_path / "out"

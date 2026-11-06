@@ -46,6 +46,7 @@ jobs:
         run: |
           docker run --rm stt-ru:test --version
           test "$(docker run --rm --entrypoint id stt-ru:test -u)" = 1000
+          docker run --rm --entrypoint cat stt-ru:test /opt/stt-ru/MODELS.md | grep -F "CC BY 4.0"
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -q | tee out.txt
           grep -F "Канал 1: Наталья, благодарю вас за ожидание." out.txt
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:test transcribe call.wav -f json -q | jq -e '.segments | length == 5'
@@ -105,6 +106,7 @@ jobs:
         run: |
           docker run --rm stt-ru:gpu --version
           docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:gpu transcribe call.wav -f json -q | jq -e '.segments | length == 5'
+          docker run --rm --network none -v "$PWD/tests/data:/data:ro" stt-ru:gpu transcribe call.wav --mono --diarize -f json -q | jq -e '[.segments[].speaker_id] | unique == [1, 2]'
       # Без GPU не хватает только libcuda.so.1: ее подставляет NVIDIA Container Toolkit
       - name: Check CUDA libraries
         run: |

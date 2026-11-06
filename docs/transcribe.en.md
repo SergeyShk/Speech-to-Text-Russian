@@ -61,9 +61,12 @@ stt-ru transcribe call.wav --mono --speakers 2    # channels mixed, exactly two 
 ```
 
 *   If the number of speakers is known, pass it in `--speakers`: this also finds a person who speaks very little, about 1-2% of the time. A number below the real one merges people. One or two above it does almost no harm but adds extra speakers with a few segments; a much higher number splits people. There can also be fewer speakers than requested: a voice that never outweighs the others does not reach the result.
-*   Different channels of a stereo recording already separate speakers: for them `--diarize` only prints a warning. To separate speakers in a mixed recording, use `--mono`.
+*   Different channels of a stereo recording already separate speakers: for them `--diarize` only prints a warning. To separate speakers in a mixed recording, use `--mono`. A stereo recording of one source (a podcast, for example) and a recording with an empty second channel are separated as usual.
+*   Existing results are not recalculated: to separate speakers in files already transcribed, use `--overwrite`.
 *   Models without word times (Whisper) give a whole segment to whoever speaks longest in it.
 *   Transcription with `--diarize` takes about one and a half to two times longer. The models it needs are on the [Models](models.md#diarization) page.
+
+Long turns of 2-4 people in a clean recording separate best, even at a low bitrate. Phone arguments, turns shorter than 1-2 s, strong noise and echo separate worse. Short "uh-huh" and "yes" over someone else's speech usually go to the main speaker. In a radio show with calls, «Говорящий N» is not necessarily one person: different callers can get one number, and jingles and ads the host's number.
 
 ## Deleting sources { #delete-source }
 

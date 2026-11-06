@@ -13,7 +13,7 @@ from pathlib import Path, PureWindowsPath
 from typing import IO, BinaryIO, Literal
 
 from ..batch import Log, ignore
-from ..exceptions import ModelError, ParameterError, SttRuError
+from ..exceptions import ModelError, ParameterError, StoppedError, SttRuError
 from ..pipeline import Transcriber
 from ..result import Transcript
 
@@ -23,6 +23,12 @@ _SUFFIX = re.compile(r"\.[A-Za-z0-9]{1,10}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 PREFIX = "stt-ru-"
 LOCK = ".lock"
+
+
+CHANNELS_WARNING = (
+    "Разделение говорящих не выполнялось: каналы записи разные, и каждый считается говорящим. "
+    "Чтобы разделить говорящих в сведенной записи, сервис запускают с --mono"
+)
 
 
 @dataclass
@@ -47,6 +53,7 @@ class Job:
         transcript (Transcript): Результат распознавания
         diarize (bool): Разделять говорящих
         speakers (int): Точное число говорящих; None - определяется по записи
+        warning (str): Пояснение к результату: например, разделение не выполнялось
     """
 
     id: str
@@ -65,6 +72,7 @@ class Job:
     deleted: bool = False
     diarize: bool = False
     speakers: int | None = None
+    warning: str | None = None
 
 
 class QueueFullError(SttRuError):
@@ -259,8 +267,8 @@ class JobQueue:
         Удаление задачи и ее файлов
 
         Описание:
-            Задача в очереди не распознается; распознаваемая задача удаляется сразу
-            после окончания
+            Задача в очереди не распознается; распознаваемая останавливается на ближайшем шаге
+            и после этого удаляется вместе с файлами
 
         Аргументы:
             job_id (str): Идентификатор
@@ -309,6 +317,15 @@ class JobQueue:
         if self._held is not None:
             self._held.close()
 
+    def log_error(self, message: str) -> None:
+        """
+        Запись в журнал ошибок
+
+        Аргументы:
+            message (str): Сообщение; ошибка самого вывода не прерывает работу
+        """
+        self._say(message, self.errors)
+
     def _say(self, message: str, log: Log | None = None) -> None:
         # Ошибка вывода (закрытый stderr) не должна останавливать поток распознавания
         with contextlib.suppress(Exception):
@@ -327,15 +344,33 @@ class JobQueue:
                 job.status = "running"
             self._run(job)
 
+    def _warn(self, job: Job, text: str) -> None:
+        with self._lock:
+            job.warning = text
+        self._say(f"[{job.id}] {job.filename}: предупреждение - {text}")
+
     def _run(self, job: Job) -> None:
         try:
             audio = self.transcriber.load(job.path, max_duration=self.max_duration)
             peaks = [[round(float(peak), 3) for peak in row] for row in audio.peaks(PEAKS)]
             with self._lock:
                 job.duration, job.channels, job.peaks = audio.duration, audio.num_channels, peaks
+            loaded = getattr(self.transcriber, "diarizer", True) is not None
+            if job.diarize and audio.num_channels == 1 and not loaded:
+                self._say(f"[{job.id}] Загрузка моделей разделения говорящих")
             transcript = self.transcriber.transcribe_audio(
-                audio, source=job.filename, diarize=job.diarize, speakers=job.speakers
+                audio,
+                source=job.filename,
+                diarize=job.diarize,
+                speakers=job.speakers,
+                should_stop=lambda: job.deleted,
+                on_warning=lambda text: self._warn(job, text),
             )
+        except StoppedError:
+            with self._lock:
+                job.finished = self.clock()
+                job.status = "failed"
+                job.error = "Задача удалена"
         except Exception as error:
             text = str(error) or type(error).__name__
             # Клиенту не нужен путь к файлу на сервере
@@ -344,7 +379,7 @@ class JobQueue:
             # В тексте ошибки загрузки может быть путь к кэшу моделей: его видит только журнал
             logged = text
             if isinstance(error, ModelError):
-                text = "Не удалось загрузить модели"
+                text = "Не удалось загрузить модели разделения говорящих; без разделения запись распознается"
             with self._lock:
                 job.error, job.finished = text, self.clock()
                 job.status = "failed"
@@ -353,6 +388,8 @@ class JobQueue:
             with self._lock:
                 job.transcript, job.finished = transcript, self.clock()
                 job.status = "done"
+                if job.diarize and transcript.channels > 1:
+                    job.diarize, job.warning = False, CHANNELS_WARNING
             seconds = job.finished - (job.started or job.finished)
             self._say(
                 f"[{job.id}] {job.filename}: фрагментов {len(transcript.segments)}, "

@@ -14,8 +14,8 @@ import stt_ru
 from stt_ru import Segment, Transcriber, pipeline
 from stt_ru.audio import Audio
 from stt_ru.diarization import Turn
-from stt_ru.exceptions import ModelError, ParameterError
-from stt_ru.pipeline import cut_points, same_signal
+from stt_ru.exceptions import ModelError, ParameterError, StoppedError
+from stt_ru.pipeline import cut_points, same_envelope, same_signal
 from stt_ru.vad import VadOptions
 
 CALL = Path(__file__).parent / "data" / "call.wav"
@@ -58,8 +58,19 @@ class FakeDiarizer:
         self.calls = []
         FakeDiarizer.instances.append(self)
 
-    def diarize(self, samples, sample_rate, speakers=None):
+    def diarize(
+        self,
+        samples,
+        sample_rate,
+        speakers=None,
+        *,
+        speech=None,
+        should_stop=None,
+        on_warning=None,
+    ):
         self.calls.append((samples.copy(), sample_rate, speakers))
+        self.speech = speech
+        self.on_warning = on_warning
         return FakeDiarizer.turns
 
 
@@ -381,7 +392,7 @@ class TestDiarization:
 
     @pytest.mark.parametrize("speakers", [0, -2])
     def test_wrong_speakers(self, diarizing, speakers):
-        with pytest.raises(ParameterError, match="Число говорящих должно быть от 1 до 100"):
+        with pytest.raises(ParameterError, match="Число говорящих должно быть целым от 1 до 100"):
             Transcriber(speakers=speakers)
 
     def test_without_word_times(self, diarizing, monkeypatch):
@@ -488,14 +499,14 @@ class TestDiarization:
         assert transcriber.transcribe_audio(mono(), diarize=True).segments[0].speaker_id == 1
 
     def test_file_not_read_with_wrong_options(self, diarizing, tmp_path):
-        with pytest.raises(ParameterError, match="Число говорящих"):
+        with pytest.raises(ParameterError, match="Число говорящих должно быть целым от 1 до 100"):
             Transcriber().transcribe(tmp_path / "missing.wav", speakers=0)
 
     @pytest.mark.parametrize(
         ("options", "message"),
         [
-            ({"speakers": 0}, "Число говорящих должно быть от 1 до 100: 0"),
-            ({"speakers": 101}, "Число говорящих должно быть от 1 до 100: 101"),
+            ({"speakers": 0}, "Число говорящих должно быть целым от 1 до 100: 0"),
+            ({"speakers": 101}, "Число говорящих должно быть целым от 1 до 100: 101"),
             ({"diarize": False, "speakers": 2}, "разделение говорящих выключено"),
         ],
     )
@@ -511,6 +522,76 @@ class TestDiarization:
         assert Transcriber(speakers=4).speaker_options(speakers=2) == (True, 2)
         assert Transcriber(speakers=4).speaker_options(diarize=False) == (False, None)
 
+    def test_speech_from_recognized_text(self, diarizing):
+        Transcriber(diarize=True).transcribe_audio(mono())
+        assert diarizing[0].speech == [(0.2, 1.8)]
+
+    def test_models_loaded_before_recognition(self, diarizing, monkeypatch):
+        def broken(**kwargs):
+            raise ModelError("нет моделей")
+
+        monkeypatch.setattr(pipeline, "Diarizer", broken)
+        transcriber = Transcriber()
+        with pytest.raises(ModelError, match="нет моделей"):
+            transcriber.transcribe_audio(mono(), diarize=True)
+        assert transcriber.recognizer.calls == []
+
+    def test_silent_record_not_diarized(self, diarizing, monkeypatch):
+        monkeypatch.setattr(FakeRecognizer, "fragments", [])
+        assert Transcriber(diarize=True).transcribe_audio(mono()).segments == ()
+        assert diarizing[0].calls == []
+
+    def test_stopped_between_windows(self, diarizing):
+        with pytest.raises(StoppedError):
+            Transcriber(diarize=True).transcribe_audio(mono(), should_stop=lambda: True)
+
+    def test_not_stopped(self, fake):
+        assert Transcriber().transcribe_audio(mono(), should_stop=lambda: False).segments
+
+    def test_plain_stopped(self, fake):
+        with pytest.raises(StoppedError):
+            Transcriber().transcribe_audio(mono(), should_stop=lambda: True)
+
+    def test_silent_network_does_not_hang(self, diarizing, monkeypatch):
+        release = threading.Event()
+
+        class Hanging(FakeDiarizer):
+            def __init__(self, **kwargs):
+                release.wait(10)
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(pipeline, "Diarizer", Hanging)
+        monkeypatch.setattr(pipeline, "LOAD_TIMEOUT", 0.2)
+        transcriber = Transcriber()
+        started = time.monotonic()
+        with pytest.raises(ModelError, match="не загрузились за 0 с"):
+            transcriber.transcribe_audio(mono(), diarize=True)
+        assert time.monotonic() - started < 5
+        started = time.monotonic()
+        with pytest.raises(ModelError, match="загрузка продолжается"):
+            transcriber.transcribe_audio(mono(), diarize=True)
+        assert time.monotonic() - started < 0.2
+        assert transcriber.transcribe_audio(mono()).segments[0].speaker_id is None
+        release.set()
+        transcriber._loader.join(5)
+        assert transcriber.transcribe_audio(mono(), diarize=True).segments[0].speaker_id == 1
+
+    def test_stopped_while_loading(self, diarizing, monkeypatch):
+        release = threading.Event()
+
+        class Hanging(FakeDiarizer):
+            def __init__(self, **kwargs):
+                release.wait(10)
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(pipeline, "Diarizer", Hanging)
+        transcriber = Transcriber()
+        try:
+            with pytest.raises(StoppedError):
+                transcriber.transcribe_audio(mono(), diarize=True, should_stop=lambda: True)
+        finally:
+            release.set()
+
     def test_windows_keep_offset(self, diarizing, monkeypatch):
         monkeypatch.setattr(pipeline, "WINDOW_SECONDS", 1.0)
         monkeypatch.setattr(pipeline, "CUT_SEARCH_SECONDS", 0.1)
@@ -522,6 +603,123 @@ class TestDiarization:
             segment.start for segment in segments
         )
         assert segments[-1].start > 2.0
+
+
+class TestOneSource:
+    def source(self, seconds=8.0, rate=8000):
+        rng = np.random.default_rng(3)
+        count = int(seconds * rate)
+        level = np.repeat(rng.uniform(0, 1, int(seconds * 10) + 1), rate // 10)[:count]
+        left = level * rng.normal(0, 0.1, count)
+        right = level * rng.normal(0, 0.1, count)
+        return np.stack([left, right], axis=1).astype(np.float32)
+
+    def test_same_source_mixed(self, fake):
+        samples = self.source()
+        transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+        assert transcript.channels == 1
+        assert transcript.channel_map == (None, None)
+        (waveforms, _) = fake[0].calls[0]
+        assert np.allclose(waveforms[0], samples.mean(axis=1))
+
+    def test_same_source_diarized(self, diarizing):
+        transcript = Transcriber(diarize=True).transcribe_audio(Audio(self.source(), 8000))
+        assert transcript.segments[0].speaker_id == 1
+        assert len(diarizing[0].calls) == 1
+
+    def test_different_speakers_kept(self, fake):
+        samples = self.source()
+        samples[:32000, 1] *= 0.001
+        samples[32000:, 0] *= 0.001
+        transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+        assert transcript.channels == 2
+
+    def test_opposite_phase_keeps_channel(self, fake):
+        # Сведение таких каналов дало бы тишину и пустой результат
+        samples = self.source()
+        samples[:, 1] = -samples[:, 0]
+        assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 1
+        (waveforms, _) = fake[0].calls[0]
+        assert np.array_equal(waveforms[0], samples[:, 0])
+
+    def test_common_tone_keeps_speakers(self, fake):
+        # В линейной громкости короткий гудок в обоих каналах перевешивает всю речь
+        samples = self.source(seconds=16.0)
+        samples[:64000, 1] *= 0.001
+        samples[64000:, 0] *= 0.001
+        samples[:2400] = np.sin(np.arange(2400) * 0.8)[:, None] * 2
+        assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 2
+
+    def test_shared_silence_keeps_speakers(self, fake):
+        # Звонок с утечкой между каналами: общая тишина подняла бы корреляцию выше порога
+        first, second = self.source(seconds=20.0).T
+        first[80000:], second[:80000] = 0, 0
+        samples = np.stack([first + 0.7 * second, second + 0.7 * first], axis=1)
+        samples[:, :] *= np.repeat(np.arange(200) % 8 < 3, 800)[:, None]
+        assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 2
+
+    def test_loud_common_music_keeps_speakers(self):
+        # Узкий диапазон уровней прижал бы тихий разговор к границе, и все решила бы музыка
+        speech = self.source(seconds=16.0)
+        speech[:64000, 1] = 0
+        speech[64000:, 0] = 0
+        rng = np.random.default_rng(5)
+        level = np.repeat(rng.uniform(0.3, 1, 300), 800)
+        music = rng.normal(0, 1, (len(level), 2)) * level[:, None]
+        samples = np.concatenate([music, speech * 0.8], dtype=np.float32)
+        assert not same_envelope(samples[:, 0], samples[:, 1], 800)
+
+    def test_long_silence_keeps_speakers(self):
+        # Шум линии в обоих каналах и тишина почти на всю запись: опорой уровня остается разговор
+        rng = np.random.default_rng(6)
+        speech = self.source(seconds=16.0)
+        speech[:64000, 1] = 0
+        speech[64000:, 0] = 0
+        speech += rng.normal(0, 1e-3, speech.shape)
+        samples = np.concatenate([np.zeros((400 * 8000, 2)), speech], dtype=np.float32)
+        assert not same_envelope(samples[:, 0], samples[:, 1], 800)
+
+    def test_long_silence_keeps_one_source(self):
+        samples = np.concatenate([np.zeros((400 * 8000, 2)), self.source()], dtype=np.float32)
+        assert same_envelope(samples[:, 0], samples[:, 1], 800)
+
+    def test_on_warning_reaches_diarizer(self, diarizing):
+        seen = []
+        Transcriber(diarize=True).transcribe_audio(mono(), on_warning=seen.append)
+        diarizing[0].on_warning("текст")
+        assert seen == ["текст"]
+
+    def test_short_recording_kept(self, fake):
+        assert Transcriber().transcribe_audio(Audio(self.source(seconds=2.0), 8000)).channels == 2
+
+    def test_silence_is_not_same_source(self):
+        assert not same_envelope(np.zeros(64000), np.zeros(64000), 800)
+
+    def test_constant_level_is_not_same_source(self):
+        level = np.ones(64000, dtype=np.float32) * 0.1
+        assert not same_envelope(level, level, 800)
+
+    @pytest.mark.parametrize("noise", [0.0, 1e-5])
+    def test_silent_channel_skipped(self, fake, noise):
+        samples = self.source()
+        samples[:, 1] = noise * np.random.default_rng(1).normal(size=len(samples))
+        transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+        assert (transcript.channels, transcript.channel_map) == (1, (None, None))
+        (waveforms, _) = fake[0].calls[0]
+        assert np.array_equal(waveforms[0], samples[:, 0])
+
+    def test_silent_third_channel_keeps_others(self, fake):
+        samples = np.zeros((64000, 3), dtype=np.float32)
+        two = self.source()
+        samples[:32000, 0] = two[:32000, 0]
+        samples[32000:, 1] = two[32000:, 1]
+        transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
+        assert transcript.channels == 2
+        assert transcript.channel_map == (0, 1, 2)
+
+    def test_all_silent(self, fake):
+        audio = Audio(np.zeros((8000, 2), dtype=np.float32), 8000)
+        assert Transcriber().transcribe_audio(audio).channels == 1
 
 
 @pytest.mark.network

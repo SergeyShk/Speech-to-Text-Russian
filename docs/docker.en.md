@@ -40,7 +40,7 @@ Commands in the container run as the user with uid 1000. To write results (`-o`,
 
 ## Other models { #models }
 
-Other models are downloaded on the first run to `/opt/huggingface` inside the container and disappear with it. To avoid downloading them again after the container is recreated, mount a named volume to `/opt/huggingface`: on the first mount Docker copies the model from the image into it. The volume keeps its files after the image is updated; if the default model changes in a new version, it is downloaded into the volume.
+Other models are downloaded on the first run to `/opt/huggingface` inside the container and disappear with it. To avoid downloading them again after the container is recreated, mount a named volume to `/opt/huggingface`: on the first mount Docker copies the model from the image into it. The volume keeps its files after the image is updated; if the default model changes in a new version, it is downloaded into the volume. The volume hides the models of the image: in a volume from a previous version the speaker separation models are downloaded on first use, and without network such jobs fail.
 
 ``` bash
 docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token -v stt-models:/opt/huggingface ghcr.io/sergeyshk/stt-ru serve --host 0.0.0.0 -m t-tech/t-one
@@ -54,6 +54,8 @@ docker run -d -p 8000:8000 -e STT_RU_TOKEN=my-secret-token -v stt-models:/opt/hu
 echo "STT_RU_TOKEN=my-secret-token" > docker/.env
 docker compose -f docker/compose.yaml up -d
 ```
+
+For the service to separate speakers by default, add the line `command: ["serve", "--host", "0.0.0.0", "--diarize"]` to `compose.yaml`. Information about the models and their licenses is in the image, in the file `/opt/stt-ru/MODELS.md`.
 
 ## GPU { #gpu }
 

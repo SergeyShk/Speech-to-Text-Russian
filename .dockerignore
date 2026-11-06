@@ -6,4 +6,5 @@
 !LICENSE.txt
 !src/
 !docker/healthcheck.py
+!docker/MODELS.md
 **/__pycache__

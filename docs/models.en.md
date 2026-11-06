@@ -58,7 +58,9 @@ stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e
 | Model | What it does | License |
 | :---- | :----------- | :------ |
 | [pyannote segmentation 3.0](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) | Finds who is speaking in 10 s windows | MIT |
-| [CAM++ from WeSpeaker](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM) | Computes a voiceprint to join the turns of one person | Apache-2.0 |
+| [CAM++ from WeSpeaker](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM) | Computes a voiceprint to join the turns of one person | Apache-2.0 on the model card, CC BY 4.0 according to the authors (see below) |
+
+The CAM++ model card says Apache-2.0, while the [WeSpeaker authors](https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md) write that models trained on VoxCeleb follow the license of that dataset, CC BY 4.0. If this matters for your use, go by the stricter one.
 
 ## Speech detection { #vad }
 

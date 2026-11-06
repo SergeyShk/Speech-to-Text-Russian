@@ -17,7 +17,7 @@
 
 ## Installation
 
-Python 3.11 or newer is required.
+Python 3.11 to 3.14 is required: ONNX Runtime has no builds for 3.15 yet.
 
 ``` bash
 pip install stt-ru
@@ -30,6 +30,7 @@ The extras for formats via ffmpeg, the web service and quality evaluation, GPUs 
 ``` bash
 stt-ru transcribe call.wav                     # text to the console
 stt-ru transcribe calls/ -o out/ -f srt,csv    # results of every file in out/
+stt-ru transcribe meeting.mp3 --diarize        # speaker separation
 stt-ru serve                                   # web interface at http://127.0.0.1:8000
 ```
 
@@ -53,8 +54,8 @@ On the first run the model (about 230 MB) is downloaded from Hugging Face. More 
 
 ## How it works
 
-1.  The file is read entirely: WAV, FLAC, OGG, MP3 and other uncompressed formats by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.
-2.  The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Channels that differ only in loudness and a small delay are recognized once.
+1.  The file is read entirely: WAV, FLAC, OGG, MP3 and other formats it reads by the soundfile library, M4A, AAC, AMR, WMA and the sound of videos by ffmpeg.
+2.  The channels of a stereo recording are recognized separately: in a recorded conversation each channel is its own speaker ("Канал 0", "Канал 1", that is "Channel 0", "Channel 1"). Channels that differ only in loudness and a small delay are recognized once, channels of one source with a different waveform are mixed into one, and a channel without sound is skipped.
 3.  [Silero VAD](models.md#vad) speech detection cuts the recording into speech segments of at most 20 s, and the model recognizes each segment.
 4.  With `--diarize`, a single-track recording is split into speaker turns and segments are labeled «Говорящий N».
 5.  The result is a list of segments with start, end, channel and text ordered by start time. Recordings longer than 10 minutes are recognized in windows of about 10 minutes cut at a pause, so recognition needs less memory.

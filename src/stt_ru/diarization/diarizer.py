@@ -1,19 +1,17 @@
-import contextlib
 import math
-import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
 import onnxruntime as rt
-from onnx_asr.loader import Manager, create_vad_resolver
+from onnx_asr.loader import Manager, create_se_resolver, create_vad_resolver
 from onnx_asr.utils import SampleRates
 
-from ..asr.recognizer import SAMPLE_RATES, default_providers
+from ..asr.recognizer import SAMPLE_RATES, default_providers, stdout_to_stderr
 from ..audio.loader import Samples
-from ..exceptions import AudioError, ModelError, ParameterError
-from .clustering import DEFAULT_THRESHOLD, cluster
+from ..exceptions import AudioError, ModelError, ParameterError, StoppedError
+from .clustering import DEFAULT_THRESHOLD, check_speakers, cluster
 
 EMBEDDING_MODEL = "Wespeaker/wespeaker-voxceleb-campplus-LM"
 SEGMENTATION_MODEL = "onnx-community/pyannote-segmentation-3.0"
@@ -32,22 +30,6 @@ MIN_CLEAN = int(0.4 * SAMPLE_RATE)
 MIN_CHUNK = int(0.5 * SAMPLE_RATE)
 # onnx-asr передискретизирует запись целиком: части ограничивают память
 RESAMPLE_BLOCK = 600
-# Память на реплики растет с числом говорящих, а число может прийти от клиента сервиса
-MAX_SPEAKERS = 100
-
-
-def check_speakers(speakers: int | None) -> None:
-    """
-    Проверка числа говорящих
-
-    Аргументы:
-        speakers (int): Точное число говорящих; None - определяется по записи
-
-    Исключения:
-        ParameterError: Если число не от 1 до MAX_SPEAKERS
-    """
-    if speakers is not None and not 1 <= speakers <= MAX_SPEAKERS:
-        raise ParameterError(f"Число говорящих должно быть от 1 до {MAX_SPEAKERS}: {speakers}")
 
 
 @dataclass(frozen=True)
@@ -82,7 +64,8 @@ class Diarizer:
         с Hugging Face в его кэш, дальше загружаются из кэша
 
     Аргументы:
-        threshold (float): Порог кластеризации: чем больше, тем меньше говорящих (см. cluster)
+        threshold (float): Порог кластеризации: чем больше, тем охотнее голоса сливаются
+            (см. cluster)
         providers (list[str]): Провайдеры ONNX Runtime; None - default_providers()
 
     Исключения:
@@ -106,10 +89,11 @@ class Diarizer:
         options = rt.SessionOptions()
         options.log_severity_level = 3
         try:
+            create_se_resolver(EMBEDDING_MODEL).resolve_model()
+            files = create_vad_resolver(SEGMENTATION_MODEL).resolve_model()
             # ONNX Runtime печатает в stdout ошибку провайдера, а stdout - для результата
-            with contextlib.redirect_stdout(sys.stderr):
+            with stdout_to_stderr():
                 self._embedder = Manager(options, chosen).create_se(EMBEDDING_MODEL)
-                files = create_vad_resolver(SEGMENTATION_MODEL).resolve_model()
                 self._segmenter = rt.InferenceSession(
                     files["model"], sess_options=options, providers=chosen
                 )
@@ -117,7 +101,14 @@ class Diarizer:
             raise ModelError(f"Не удалось загрузить модели диаризации: {error}") from error
 
     def diarize(
-        self, samples: Samples, sample_rate: int, speakers: int | None = None
+        self,
+        samples: Samples,
+        sample_rate: int,
+        speakers: int | None = None,
+        *,
+        speech: Sequence[tuple[float, float]] | None = None,
+        should_stop: Callable[[], bool] | None = None,
+        on_warning: Callable[[str], None] | None = None,
     ) -> list[Turn]:
         """
         Поиск реплик в одноканальной записи
@@ -126,6 +117,12 @@ class Diarizer:
             samples (numpy.ndarray): Одномерный массив отсчетов float32
             sample_rate (int): Частота дискретизации, Гц
             speakers (int): Точное число говорящих; None - определяется по записи
+            speech (list[tuple[float, float]]): Отрезки с настоящей речью, с: голос тем важнее,
+                чем больше его здесь, поэтому музыка не занимает место человека;
+                None - важна любая найденная речь
+            should_stop (Callable): Вызывается между шагами; True прерывает работу
+            on_warning (Callable): Получает текст предупреждения о числе говорящих; None -
+                warnings.warn
 
         Вывод:
             list[Turn]: Реплики по времени начала; пусто, если речи нет
@@ -133,6 +130,7 @@ class Diarizer:
         Исключения:
             AudioError: Если отсчеты не одномерный массив float32 или частота не поддерживается
             ParameterError: Если число говорящих неверно (см. check_speakers)
+            StoppedError: Если should_stop вернул True
         """
         check_speakers(speakers)
         if samples.ndim != 1 or samples.dtype != np.float32:
@@ -141,11 +139,13 @@ class Diarizer:
                 f"форма {samples.shape}"
             )
         waveform = self._resample(samples, sample_rate)
-        starts, active = self._segment(waveform)
+        starts, active = self._segment(waveform, should_stop)
         vectors, owners, weights = [], [], []
+        mask = None if speech is None else _speech_frames(speech, len(waveform))
         # Куски считаются сразу: вместе они занимали бы в несколько раз больше самой записи.
         # В пачке короткие куски разбавлялись бы нулями: onnx-asr не передает модели их длины
-        for chunk, owner, weight in _local_speakers(waveform, starts, active):
+        for chunk, owner, weight in _local_speakers(waveform, starts, active, mask):
+            _check_stop(should_stop)
             vectors.append(self._embedder.embedding(chunk))
             owners.append(owner)
             weights.append(weight)
@@ -153,7 +153,7 @@ class Diarizer:
             return []
         matrix = np.stack(vectors)
         matrix /= np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-9)
-        labels = cluster(matrix, self.threshold, speakers, np.array(weights))
+        labels = cluster(matrix, self.threshold, speakers, np.array(weights), on_warning)
         return _turns(len(waveform), starts, active, owners, labels)
 
     def _resample(self, samples: Samples, sample_rate: int) -> Samples:
@@ -174,13 +174,16 @@ class Diarizer:
             parts.append(resampled[0, : int(lengths[0])])
         return np.concatenate(parts) if parts else samples[:0]
 
-    def _segment(self, waveform: Samples) -> tuple[list[int], np.ndarray]:
+    def _segment(
+        self, waveform: Samples, should_stop: Callable[[], bool] | None
+    ) -> tuple[list[int], np.ndarray]:
         total = len(waveform)
         starts = list(range(0, max(total - WINDOW, 0) + 1, HOP)) if total else []
         if total > WINDOW and starts[-1] + WINDOW < total:
             starts.append(total - WINDOW)
         windows = []
         for start in starts:
+            _check_stop(should_stop)
             chunk = waveform[start : start + WINDOW]
             if len(chunk) < WINDOW:
                 chunk = np.pad(chunk, (0, WINDOW - len(chunk)))
@@ -189,8 +192,22 @@ class Diarizer:
         return starts, np.stack(windows) if windows else np.zeros((0, 0, 3), dtype=np.int8)
 
 
+def _check_stop(should_stop: Callable[[], bool] | None) -> None:
+    if should_stop is not None and should_stop():
+        raise StoppedError("Разделение говорящих остановлено")
+
+
+def _speech_frames(speech: Sequence[tuple[float, float]], total: int) -> np.ndarray:
+    mask = np.zeros(total // FRAME_STEP + 1, dtype=bool)
+    for start, end in speech:
+        mask[int(start * SAMPLE_RATE / FRAME_STEP) : int(end * SAMPLE_RATE / FRAME_STEP) + 1] = (
+            True
+        )
+    return mask
+
+
 def _local_speakers(
-    waveform: Samples, starts: list[int], active: np.ndarray
+    waveform: Samples, starts: list[int], active: np.ndarray, speech: np.ndarray | None
 ) -> Iterator[tuple[Samples, tuple[int, int], int]]:
     alone = active.sum(axis=-1) == 1
     for window, start in enumerate(starts):
@@ -205,7 +222,11 @@ def _local_speakers(
             chunk = piece[: len(mask)][mask]
             if len(chunk) > 0:
                 stretched = chunk if len(chunk) >= MIN_CHUNK else np.resize(chunk, MIN_CHUNK)
-                yield stretched, (window, speaker), len(chunk)
+                weight = len(chunk)
+                if speech is not None:
+                    frames = np.flatnonzero(chosen) + start // FRAME_STEP
+                    weight = int(speech[frames[frames < len(speech)]].sum()) * FRAME_STEP
+                yield stretched, (window, speaker), weight
 
 
 def _turns(

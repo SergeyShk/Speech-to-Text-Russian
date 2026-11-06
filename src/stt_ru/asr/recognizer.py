@@ -1,8 +1,9 @@
 import contextlib
 import os
 import sys
+import threading
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, cast, get_args
 
@@ -35,6 +36,23 @@ WITHOUT_INT8 = frozenset({"t-tech/t-one"})
 
 Found = list[tuple[float, float, str]]
 Word = tuple[float, float, str]
+
+
+_STDOUT_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def stdout_to_stderr() -> Iterator[None]:
+    """
+    Вывод stdout в stderr на время загрузки моделей
+
+    Описание:
+        redirect_stdout меняет sys.stdout на весь процесс, поэтому одновременные загрузки ждут
+        друг друга: иначе последняя оставила бы его подмененным. Вывод других потоков на это
+        время тоже уходит в stderr
+    """
+    with _STDOUT_LOCK, contextlib.redirect_stdout(sys.stderr):
+        yield
 
 
 def default_providers() -> list[str]:
@@ -93,7 +111,7 @@ class Recognizer:
         self._options.log_severity_level = 3
         # ONNX Runtime печатает в stdout ошибку провайдера, если переходит на запасной,
         # а stdout - для результата распознавания
-        with contextlib.redirect_stdout(sys.stderr):
+        with stdout_to_stderr():
             asr, silero = self._load_all(quantization)
         self._asr = asr.with_vad(silero, **(vad or VadOptions()).as_kwargs())
 

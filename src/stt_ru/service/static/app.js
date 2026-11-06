@@ -6,6 +6,9 @@ const POLL_MS = 1500;
 // Готовые задачи проверяются реже: их могут удалить через API или по сроку хранения
 const FINISHED_EVERY = 20;
 const ACTIVE = new Set(["queued", "running"]);
+// После скольких неудачных опросов подряд страница говорит, что связи нет
+const OFFLINE_POLLS = 3;
+const SPEAKER_COLORS = 8;
 const STATUS = { queued: "в очереди", running: "распознается", done: "готово", failed: "ошибка" };
 
 const $ = (id) => document.getElementById(id);
@@ -22,6 +25,9 @@ const state = {
   polling: false,
   tick: 0,
   listed: null,
+  removed: new Set(),
+  failedPolls: 0,
+  gone: "",
 };
 
 function storedIds() {
@@ -35,7 +41,9 @@ function storedIds() {
 
 function storeIds() {
   try {
-    localStorage.setItem(STORAGE, JSON.stringify([...state.jobs.keys()]));
+    // Другая вкладка могла добавить свои задачи: чужие записи не затираются, свои удаленные не возвращаются
+    const known = storedIds().filter((id) => !state.jobs.has(id) && !state.removed.has(id));
+    localStorage.setItem(STORAGE, JSON.stringify([...state.jobs.keys(), ...known]));
   } catch {
     // Без хранилища список задач живет до перезагрузки страницы
   }
@@ -87,9 +95,13 @@ function since(value) {
   return value ? (Date.now() - Date.parse(value)) / 1000 : 0;
 }
 
+function speakerSlot(segment) {
+  return (segment.speaker_id ?? segment.channel ?? 0) % SPEAKER_COLORS;
+}
+
 function speakerColor(segment) {
   const css = getComputedStyle(document.documentElement);
-  return css.getPropertyValue(`--speaker-${(segment.speaker_id ?? segment.channel ?? 0) % 4}`).trim();
+  return css.getPropertyValue(`--speaker-${speakerSlot(segment)}`).trim();
 }
 
 function showToken() {
@@ -229,17 +241,31 @@ function renderList() {
 
 function forget(id) {
   state.jobs.delete(id);
+  state.removed.add(id);
   storeIds();
   if (state.current === id) closeJob();
+}
+
+function renderBanner() {
+  const text = state.failedPolls >= OFFLINE_POLLS ? "Нет связи с сервисом" : state.gone;
+  $("banner").textContent = text;
+  $("banner").hidden = !text;
 }
 
 async function refresh(id) {
   try {
     const response = await api(`/v1/jobs/${encodeURIComponent(id)}`);
-    if (response.status === 404) forget(id);
-    else if (response.ok) state.jobs.set(id, await response.json());
-  } catch {
-    // Сервис недоступен: следующий опрос повторит запрос
+    // Сервис за прокси: упавший сервис выглядит как 502, а не как обрыв
+    if (response.status >= 500) return false;
+    if (response.status === 404) {
+      const open = state.current === id;
+      forget(id);
+      if (open) state.gone = "Задача удалена или срок ее хранения вышел";
+    } else if (response.ok) state.jobs.set(id, await response.json());
+    return true;
+  } catch (error) {
+    // fetch при обрыве бросает TypeError, а 401 из api - ответ работающего сервиса
+    return !(error instanceof TypeError);
   }
 }
 
@@ -250,7 +276,10 @@ async function poll() {
     const ids = [...state.jobs]
       .filter(([id, job]) => everything || id === state.current || !job || ACTIVE.has(job.status))
       .map(([id]) => id);
-    await Promise.all(ids.map(refresh));
+    const reached = await Promise.all(ids.map(refresh));
+    if (reached.includes(false)) state.failedPolls += 1;
+    else if (reached.length || !state.jobs.size) state.failedPolls = 0;
+    renderBanner();
     renderList();
     if (state.current) await renderJob();
   } catch {
@@ -277,7 +306,12 @@ function openJob(id) {
   if (state.current !== id) {
     state.current = id;
     state.loaded = null;
+    state.gone = "";
+    state.removed.delete(id);
+    renderBanner();
     state.segments = [];
+    state.rows = [];
+    state.playing = [];
     state.waveform = null;
     $("audio").pause();
     $("player").hidden = true;
@@ -295,12 +329,16 @@ function statusText(job) {
   if (job.status === "queued") {
     return job.position ? `В очереди: перед ней задач - ${job.position}` : "В очереди: следующая";
   }
-  if (job.status === "running") return `Распознается, прошло ${length(since(job.started))}`;
+  if (job.status === "running") {
+    if (state.failedPolls >= OFFLINE_POLLS) return "Нет связи с сервисом: задача могла прерваться";
+    return `Распознается, прошло ${length(since(job.started))}`;
+  }
   if (job.status === "failed") return `Ошибка: ${job.error}`;
   const seconds = (Date.parse(job.finished) - Date.parse(job.started)) / 1000;
   const kept = job.expires ? `, хранится до ${new Date(job.expires).toLocaleString("ru-RU")}` : "";
   const found = job.segments ? `фрагментов ${job.segments}` : "речи в записи не найдено";
-  return `Готово: ${found}, распознано за ${length(seconds)}${kept}`;
+  const warning = job.warning ? ` ${job.warning}` : "";
+  return `Готово: ${found}, распознано за ${length(seconds)}${kept}.${warning}`;
 }
 
 async function renderJob() {
@@ -322,34 +360,42 @@ async function renderJob() {
   if (state.loaded === `${id}:${job.status}`) return;
   if (job.duration === null && job.status !== "done") return;
   state.loaded = `${id}:${job.status}`;
-  await loadWaveform(id);
-  if (job.status === "done") await loadResult(id);
+  // Сбой одного запроса не должен оставить готовую задачу без текста: следующий опрос повторит
+  try {
+    const waveform = await loadWaveform(id);
+    const result = job.status !== "done" || (await loadResult(id));
+    if (!waveform || !result) state.loaded = null;
+  } catch {
+    state.loaded = null;
+  }
 }
 
 async function loadWaveform(id) {
-  if (state.waveform) return;
+  if (state.waveform) return true;
   const response = await api(`/v1/jobs/${encodeURIComponent(id)}/waveform`);
   if (response.status === 404) forget(id);
-  if (!response.ok || state.current !== id) return;
+  if (!response.ok || state.current !== id) return false;
   const waveform = await response.json();
-  if (state.current !== id) return;
+  if (state.current !== id) return true;
   state.waveform = waveform;
   const audio = $("audio");
   audio.src = `/v1/jobs/${encodeURIComponent(id)}/audio`;
   $("player").hidden = false;
   drawWave();
+  return true;
 }
 
 async function loadResult(id) {
   const response = await api(`/v1/jobs/${encodeURIComponent(id)}/result?format=json`);
   if (response.status === 404) forget(id);
-  if (!response.ok || state.current !== id) return;
+  if (!response.ok || state.current !== id) return false;
   const result = await response.json();
-  if (state.current !== id) return;
+  if (state.current !== id) return true;
   state.segments = result.segments;
   renderDownloads(id);
   renderSegments();
   drawWave();
+  return true;
 }
 
 function renderDownloads(id) {
@@ -377,8 +423,7 @@ function renderSegments() {
       cell.textContent = value;
       if (index < 2) cell.className = "time";
       if (index === 2) {
-        cell.className = "speaker";
-        cell.style.color = speakerColor(segment);
+        cell.className = `speaker speaker-${speakerSlot(segment)}`;
       }
       row.append(cell);
     });
@@ -535,6 +580,8 @@ async function init() {
     seek(((event.clientX - box.left) / box.width) * wave.duration, false);
   });
   window.addEventListener("resize", drawWave);
+  // Цвета волны рисуются один раз, а таблица меняет их сама через стили
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawWave);
   window.addEventListener("hashchange", () => {
     const id = location.hash.slice(1);
     if (id && id !== state.current) {

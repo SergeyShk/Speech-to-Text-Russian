@@ -39,7 +39,7 @@
 
 ## Установка
 
-Требуется Python 3.11 или новее.
+Требуется Python от 3.11 до 3.14: для 3.15 у ONNX Runtime пока нет сборок.
 
 ```bash
 pip install stt-ru
@@ -65,6 +65,7 @@ pip install "stt-ru[ffmpeg,service,eval]"
 stt-ru transcribe call.wav                                       # текст в консоль
 stt-ru transcribe calls/ -o out/ -f srt,ass,csv --summary out/all.csv
 stt-ru transcribe calls/ -o out/ --watch                         # мониторинг папки
+stt-ru transcribe meeting.mp3 --diarize                          # разделение говорящих
 stt-ru evaluate eval.csv -m gigaam-v3-e2e-rnnt -m t-tech/t-one   # сравнение моделей
 stt-ru serve                                                     # http://127.0.0.1:8000
 ```
@@ -85,7 +86,7 @@ stt-ru serve                                                     # http://127.0.
 PosixPath('call.srt')
 ```
 
-Ноутбуки с примерами - в каталоге [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks): быстрый старт, аналитика звонка, длинная запись и субтитры, оценка моделей, веб-сервис из Python. Каждый открывается в Colab, описания - на странице [Примеры](https://sergeyshk.github.io/Speech-to-Text-Russian/examples/).
+Ноутбуки с примерами - в каталоге [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks): быстрый старт, аналитика звонка, длинная запись и субтитры, оценка моделей, веб-сервис из Python, разделение говорящих. Каждый открывается в Colab, описания - на странице [Примеры](https://sergeyshk.github.io/Speech-to-Text-Russian/examples/).
 
 ## Docker
 
@@ -153,4 +154,4 @@ uv run pre-commit install
 
 ## Лицензия
 
-Код распространяется под лицензией [MIT](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/LICENSE.txt). Модель GigaAM-v3 распространяется под лицензией MIT; у других моделей onnx-asr - свои лицензии.
+Код распространяется под лицензией [MIT](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/LICENSE.txt). Модель GigaAM-v3 распространяется под лицензией MIT; у других моделей onnx-asr - свои лицензии. Лицензии моделей разделения говорящих - на странице [Модели](https://sergeyshk.github.io/Speech-to-Text-Russian/models/#diarization).

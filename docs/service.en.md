@@ -13,12 +13,12 @@ stt-ru serve                                         # http://127.0.0.1:8000
 STT_RU_TOKEN=my-secret-token stt-ru serve --host 0.0.0.0 -j 2    # network access with a token
 ```
 
-The REST API reference with request examples is at `/docs`.
+The REST API reference with request examples is at `/docs`. This page takes Swagger UI from the network: without internet it is empty, and the schema remains at `/openapi.json`.
 
 ## Web interface
 
 *   Upload by drag and drop or by choosing files, several files in a row, an upload progress bar.
-*   Before uploading, speaker separation can be turned on and the number of speakers set for this recording.
+*   Before uploading, speaker separation can be turned on and the number of speakers set for this recording. It works on a single-track recording: if the channels differ, the page says so.
 *   The list of jobs of this browser with their state: queued and the place in the queue, running, done, failed.
 *   A waveform per channel with the segments of each speaker, a player and a table of segments: clicking a row or the waveform jumps to that place in the recording, and the current segment is highlighted.
 *   Downloading the result in TXT, JSON, JSONL, SRT, VTT, ASS and CSV, deleting a job.
@@ -71,11 +71,11 @@ python -c "import secrets; print(secrets.token_urlsafe(24))"
 | `GET /v1/jobs/{id}/result?format=srt` | Result in a format (`json` by default) with the file name in `Content-Disposition` |
 | `GET /v1/jobs/{id}/waveform` | Waveform peaks per channel |
 | `GET /v1/jobs/{id}/audio` | The uploaded file, with seeking support (`Range`): audio and video for the player, anything else as an attachment |
-| `DELETE /v1/jobs/{id}` | Deletes the job and its files |
+| `DELETE /v1/jobs/{id}` | Deletes the job and its files; a running job stops at the nearest step |
 | `GET /v1/info` | Version, model, limits, formats, whether a token is required, default speaker separation and the largest number of speakers |
 | `GET /healthz` | Health check: `{"status": "ok"}` |
 
-A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments), `diarize` and `speakers` (speaker separation of this job) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full.
+A job is JSON with the fields `id`, `status` (`queued`, `running`, `done`, `failed`), `filename`, `size`, `created`, `started`, `finished`, `expires` (when the job will be deleted), `position` (how many jobs are ahead), `duration`, `channels`, `segments` (number of segments), `diarize` and `speakers` (speaker separation of this job), `warning` (an explanation: for example, separation was not performed because the channels differ, and then `diarize` of the finished job is `false`) and `error`. Errors are `{"detail": "..."}` with messages in Russian: 401 without a token, 404 for a deleted job, 400 for an unknown result format and an unparsable upload, 409 for a job that is not ready or failed, 413 for a large file, 422 for wrong parameters, 503 when the queue is full, 507 when the disk is out of space.
 
 ``` bash
 token="Authorization: Bearer my-secret-token"
@@ -91,7 +91,7 @@ import requests
 
 api = "http://127.0.0.1:8000/v1"
 headers = {"Authorization": "Bearer my-secret-token"}
-with open("call.wav", "rb") as file:
+with open("meeting.mp3", "rb") as file:
     job = requests.post(
         f"{api}/transcriptions", files={"file": file}, data={"speakers": 2}, headers=headers
     ).json()
@@ -117,3 +117,5 @@ jobs = JobQueue(Transcriber(), "/data/stt", workers=2, max_duration=3600, keep=3
 app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
+
+The `/data/stt` folder must exist. Your own object instead of `Transcriber` must support `speaker_options`, `load`, `recognizer.model` and `transcribe_audio` with the `diarize`, `speakers`, `should_stop` and `on_warning` parameters.

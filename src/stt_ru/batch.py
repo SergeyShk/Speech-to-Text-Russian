@@ -412,7 +412,7 @@ class Batch:
             return False
         report.skipped.append(job.source)
         kept = ", исходник оставлен" if self.delete_source else ""
-        self.log(f"{job.source}: пропущен, результаты уже есть{kept}")
+        self.log(f"{job.source}: пропущен, результаты уже есть{kept} (--overwrite - заново)")
         return True
 
     def _transcribe(self, job: Job) -> Result:

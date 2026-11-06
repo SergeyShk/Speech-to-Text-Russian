@@ -1,6 +1,7 @@
 import os
 import threading
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
@@ -14,7 +15,7 @@ from .asr.recognizer import Word
 from .audio import Audio, load_audio
 from .audio.loader import Samples
 from .diarization import Diarizer, Timeline, check_speakers
-from .exceptions import ParameterError
+from .exceptions import ModelError, ParameterError, StoppedError
 from .result import Segment, Transcript
 from .vad import VadOptions
 
@@ -30,8 +31,21 @@ SAME_CHANNEL_RATIO = 1e-3
 SAME_CHANNEL_LAG = 0.01
 LAG_FRAME = 1 << 14
 LAG_FRAMES = 16
+# Настоящая стереозапись одного источника: волна разная, а уровень меняется одинаково.
+# На таких записях корреляция от 0.97, на звонке с гудком, музыкой и утечкой обычно до 0.93
+SAME_ENVELOPE = 0.95
+ENVELOPE_FRAME = 0.1
+ENVELOPE_FLOOR_DB = 40.0
+ENVELOPE_MIN_FRAMES = 50
+# Каналы в противофазе при сведении гасят друг друга
+MIX_LOSS = 0.25
+# Канал тише громкого на 50 дБ по энергии: цифровая тишина или шум без речи
+SILENT_CHANNEL = 1e-5
+# Первая задача с разделением ждет модели не дольше этого; скачивание идет дальше в фоне
+LOAD_TIMEOUT = 300.0
 
 Track = tuple[int | None, Samples]
+Fragment = tuple[float, float, str, list[Word] | None]
 
 
 class Transcriber:
@@ -40,8 +54,9 @@ class Transcriber:
 
     Описание:
         Каналы стереозаписи распознаются отдельно: в записях разговоров каждый канал - свой
-        говорящий; каналы, которые отличаются только громкостью и сдвигом до 10 мс
-        (см. same_signal), распознаются один раз. Файл с частотой, которую модель
+        говорящий. Каналы, которые отличаются только громкостью и сдвигом до 10 мс
+        (см. same_signal), распознаются один раз; каналы одного источника с разной волной
+        (см. same_envelope) сводятся в один, а канал без звука пропускается. Файл с частотой, которую модель
         не принимает, и формат, который читает только ffmpeg, переводятся в 16 кГц через
         ffmpeg (см. load_audio). Записи длиннее 10 минут распознаются окнами около 10 минут
         с границей в паузе (см. cut_points)
@@ -99,6 +114,9 @@ class Transcriber:
         self.diarizer = Diarizer(providers=providers) if self.diarize else None
         self._providers = providers
         self._diarizer_lock = threading.Lock()
+        self._loader: threading.Thread | None = None
+        self._load_error: ModelError | None = None
+        self._load_deadline = 0.0
 
     def speaker_options(
         self, diarize: bool | None = None, speakers: int | None = None
@@ -194,6 +212,8 @@ class Transcriber:
         *,
         diarize: bool | None = None,
         speakers: int | None = None,
+        should_stop: Callable[[], bool] | None = None,
+        on_warning: Callable[[str], None] | None = None,
     ) -> Transcript:
         """
         Распознавание записи в памяти
@@ -203,6 +223,9 @@ class Transcriber:
             source (str): Имя файла записи для результата
             diarize (bool): Разделять говорящих (см. speaker_options)
             speakers (int): Точное число говорящих (см. speaker_options)
+            should_stop (Callable): Вызывается между шагами; True прерывает работу
+            on_warning (Callable): Получает текст предупреждения о числе говорящих; None -
+                warnings.warn
 
         Вывод:
             Transcript: Фрагменты речи по времени начала; фрагменты без текста отбрасываются
@@ -211,20 +234,23 @@ class Transcriber:
             AudioError: Если модель не принимает частоту записи
             ModelError: Если не загружаются модели диаризации
             ParameterError: Если параметры говорящих неверны (см. speaker_options)
+            StoppedError: Если should_stop вернул True
         """
         separate, count = self.speaker_options(diarize, speakers)
         tracks, channel_map = self._tracks(audio)
-        timeline = self._timeline(tracks, audio.sample_rate, source, count) if separate else None
+        diarizer = self._diarizer_for(tracks, source, should_stop) if separate else None
         cuts = cut_points([samples for _, samples in tracks], audio.sample_rate)
         segments: list[Segment] = []
+        fragments: list[Fragment] = []
         for start, end in pairwise(cuts):
             if end == start:
                 continue
+            _check_stop(should_stop)
             offset = start / audio.sample_rate
             waveforms = [samples[start:end] for _, samples in tracks]
-            if timeline is not None:
+            if diarizer is not None:
                 found = self.recognizer.recognize_words(waveforms, audio.sample_rate)[0]
-                segments += _by_speaker(found, offset, timeline)
+                fragments += [_shifted(fragment, offset) for fragment in found if fragment[2]]
             else:
                 segments += [
                     Segment(round(offset + begin, 3), round(offset + finish, 3), text, channel)
@@ -236,9 +262,19 @@ class Transcriber:
                     for begin, finish, text in window
                     if text
                 ]
+        if diarizer is not None and fragments:
+            # Вес голоса считается только по распознанной речи: музыка без текста не займет
+            # место человека, поэтому распознавание идет раньше
+            turns = diarizer.diarize(
+                tracks[0][1],
+                audio.sample_rate,
+                count,
+                speech=[(begin, finish) for begin, finish, _, _ in fragments],
+                should_stop=should_stop,
+                on_warning=on_warning,
+            )
+            segments = _renumbered(_by_speaker(fragments, Timeline(turns)))
         segments.sort(key=lambda segment: (segment.start, segment.channel or 0))
-        if timeline is not None:
-            segments = _renumbered(segments)
         return Transcript(
             tuple(segments),
             audio.duration,
@@ -248,9 +284,9 @@ class Transcriber:
             channel_map,
         )
 
-    def _timeline(
-        self, tracks: list[Track], sample_rate: int, source: str | None, speakers: int | None
-    ) -> Timeline | None:
+    def _diarizer_for(
+        self, tracks: list[Track], source: str | None, should_stop: Callable[[], bool] | None
+    ) -> Diarizer | None:
         if len(tracks) > 1:
             # Python показывает повтор одного текста один раз: имя файла отличает записи
             warn(
@@ -259,51 +295,103 @@ class Transcriber:
                 stacklevel=3,
             )
             return None
-        return Timeline(self._loaded_diarizer().diarize(tracks[0][1], sample_rate, speakers))
+        return self._loaded_diarizer(should_stop)
 
-    def _loaded_diarizer(self) -> Diarizer:
+    def _loaded_diarizer(self, should_stop: Callable[[], bool] | None = None) -> Diarizer:
         with self._diarizer_lock:
-            if self.diarizer is None:
-                self.diarizer = Diarizer(providers=self._providers)
-            return self.diarizer
+            if self.diarizer is None and self._loader is None:
+                self._load_deadline = time.monotonic() + LOAD_TIMEOUT
+                self._load_error = None
+                self._loader = threading.Thread(target=self._load_diarizer, daemon=True)
+                self._loader.start()
+            loader = self._loader
+        # Поток, а не вызов здесь: huggingface_hub ждет молчащую сеть без тайм-аута
+        while loader is not None and loader.is_alive() and time.monotonic() < self._load_deadline:
+            _check_stop(should_stop)
+            loader.join(0.2)
+        return self._finished_diarizer(loader)
+
+    def _finished_diarizer(self, loader: threading.Thread | None) -> Diarizer:
+        with self._diarizer_lock:
+            if self.diarizer is not None:
+                return self.diarizer
+            if loader is not None and loader.is_alive():
+                raise ModelError(
+                    f"Модели разделения говорящих не загрузились за {LOAD_TIMEOUT:.0f} с: "
+                    "проверьте сеть; загрузка продолжается"
+                )
+            self._loader = None
+            raise self._load_error or ModelError("Модели разделения говорящих не загрузились")
+
+    def _load_diarizer(self) -> None:
+        try:
+            diarizer = Diarizer(providers=self._providers)
+        except ModelError as error:
+            self._load_error = error
+        else:
+            with self._diarizer_lock:
+                self.diarizer = diarizer
 
     def _tracks(self, audio: Audio) -> tuple[list[Track], tuple[int | None, ...]]:
         single: tuple[int | None, ...] = (None,) * audio.num_channels
         if not self.split_channels:
             return [(None, audio.mono())], single
         lag = int(SAME_CHANNEL_LAG * audio.sample_rate)
+        frame = max(int(ENVELOPE_FRAME * audio.sample_rate), 1)
+        energies = [_energy(audio.samples[:, index]) for index in range(audio.num_channels)]
+        loudest = max(energies)
         tracks: list[Track] = []
         channel_map: list[int | None] = []
+        mixed = False
         for index in range(audio.num_channels):
+            if energies[index] < SILENT_CHANNEL * loudest:
+                channel_map.append(index)
+                continue
             samples = audio.samples[:, index]
-            same = (channel for channel, kept in tracks if same_signal(kept, samples, lag))
-            if (match := next(same, None)) is None:
+            match = next(
+                (channel for channel, kept in tracks if same_signal(kept, samples, lag)), None
+            )
+            if match is None:
+                match = next(
+                    (channel for channel, kept in tracks if same_envelope(kept, samples, frame)),
+                    None,
+                )
+                mixed = mixed or match is not None
+            if match is None:
                 tracks.append((index, samples))
                 channel_map.append(index)
             else:
                 channel_map.append(match)
         if len(tracks) == 1:
-            return [(None, tracks[0][1])], single
+            kept = tracks[0][1]
+            mono = audio.mono() if mixed else kept
+            return [(None, mono if _energy(mono) >= MIX_LOSS * _energy(kept) else kept)], single
         return tracks, tuple(channel_map)
 
 
-def _by_speaker(
-    found: list[tuple[float, float, str, list[Word] | None]], offset: float, timeline: Timeline
-) -> list[Segment]:
+def _check_stop(should_stop: Callable[[], bool] | None) -> None:
+    if should_stop is not None and should_stop():
+        raise StoppedError("Распознавание остановлено")
+
+
+def _shifted(fragment: Fragment, offset: float) -> Fragment:
+    begin, finish, text, words = fragment
+    moved = None if words is None else [(a + offset, b + offset, word) for a, b, word in words]
+    return begin + offset, finish + offset, text, moved
+
+
+def _by_speaker(fragments: list[Fragment], timeline: Timeline) -> list[Segment]:
     segments = []
-    for begin, finish, text, words in found:
-        if not text:
-            continue
-        begin, finish = offset + begin, offset + finish
+    for begin, finish, text, words in fragments:
         if not words:
             speaker = timeline.speaker(begin, finish) or 1
             segments.append(Segment(round(begin, 3), round(finish, 3), text, speaker_id=speaker))
             continue
         groups: list[tuple[int, float, list[str]]] = []
         for first, last, word in words:
-            speaker = timeline.speaker(offset + first, offset + last) or 1
+            speaker = timeline.speaker(first, last) or 1
             if not groups or groups[-1][0] != speaker:
-                groups.append((speaker, offset + first, []))
+                groups.append((speaker, first, []))
             groups[-1][2].append(word)
         starts = [begin, *(group[1] for group in groups[1:])]
         ends = [*starts[1:], finish]
@@ -321,6 +409,66 @@ def _renumbered(segments: list[Segment]) -> list[Segment]:
         replace(segment, speaker_id=numbers.setdefault(segment.speaker_id, len(numbers) + 1))
         for segment in segments
     ]
+
+
+def _energy(samples: Samples, block: int = 1 << 20) -> float:
+    total = 0.0
+    for start in range(0, len(samples), block):
+        part = samples[start : start + block].astype(np.float64)
+        total += float(np.dot(part, part))
+    return total
+
+
+def _envelope(samples: Samples, frame: int) -> np.ndarray:
+    count = len(samples) // frame
+    levels = np.empty(count)
+    for index in range(count):
+        part = samples[index * frame : (index + 1) * frame].astype(np.float64)
+        levels[index] = np.sqrt(np.dot(part, part) / frame)
+    # В дБ: иначе короткий громкий гудок в обоих каналах перевешивает всю речь
+    # Только слышимые кадры: если тишина занимает почти всю запись, опорой станет она
+    audible = levels[levels >= levels.max() * 1e-3]
+    loud = max(float(np.percentile(audible, 95)), 1e-12)
+    return (20 * np.log10(np.maximum(levels, 1e-12) / loud)).clip(-ENVELOPE_FLOOR_DB)
+
+
+def same_envelope(first: Samples, second: Samples, frame: int) -> bool:
+    """
+    Один ли источник в двух каналах с разной волной
+
+    Описание:
+        Каналы одного разговора в стереозаписи отличаются волной (обработка, MP3), но уровень
+        в них меняется одинаково. Источник один, если корреляция уровня в дБ не ниже
+        SAME_ENVELOPE. Считаются только кадры, где слышен хотя бы один канал. Если таких кадров
+        меньше ENVELOPE_MIN_FRAMES, всегда False: случайное совпадение слишком вероятно
+
+    Аргументы:
+        first (numpy.ndarray): Отсчеты первого канала
+        second (numpy.ndarray): Отсчеты второго канала той же длины
+        frame (int): Длина кадра, отсчеты
+
+    Вывод:
+        bool: Источник один
+
+    Пример использования:
+        >>> import numpy as np
+        >>> from stt_ru.pipeline import same_envelope
+        >>> rng = np.random.default_rng(0)
+        >>> level = np.repeat(rng.uniform(0, 1, 60), 800)
+        >>> left = (level * rng.normal(0, 1, level.size)).astype(np.float32)
+        >>> right = (level * rng.normal(0, 1, level.size)).astype(np.float32)
+        >>> same_envelope(left, right, 800), same_envelope(left, right[::-1], 800)
+        (True, False)
+    """
+    if len(first) // frame < ENVELOPE_MIN_FRAMES:
+        return False
+    a, b = _envelope(first, frame), _envelope(second, frame)
+    # Общая тишина не говорит об источнике, но подняла бы корреляцию любых двух каналов
+    heard = (a > -ENVELOPE_FLOOR_DB) | (b > -ENVELOPE_FLOOR_DB)
+    a, b = a[heard], b[heard]
+    if len(a) < ENVELOPE_MIN_FRAMES or np.ptp(a) == 0 or np.ptp(b) == 0:
+        return False
+    return float(np.corrcoef(a, b)[0, 1]) >= SAME_ENVELOPE
 
 
 def same_signal(first: Samples, second: Samples, max_lag: int = 0, block: int = 1 << 20) -> bool:

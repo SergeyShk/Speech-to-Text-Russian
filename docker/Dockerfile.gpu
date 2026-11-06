@@ -32,7 +32,8 @@ FROM nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
 ARG MODEL=gigaam-v3-e2e-rnnt
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/opt/huggingface
+    HF_HOME=/opt/huggingface \
+    ORT_DISABLE_TELEMETRY=1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3.12 \
     && rm -rf /var/lib/apt/lists/* \
@@ -50,7 +51,7 @@ RUN if [ -n "$MODEL" ]; then \
 WORKDIR /data
 EXPOSE 8000
 STOPSIGNAL SIGINT
-COPY docker/healthcheck.py /opt/stt-ru/healthcheck.py
+COPY docker/healthcheck.py docker/MODELS.md /opt/stt-ru/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=2s \
     CMD ["python", "/opt/stt-ru/healthcheck.py"]
 ENTRYPOINT ["stt-ru"]

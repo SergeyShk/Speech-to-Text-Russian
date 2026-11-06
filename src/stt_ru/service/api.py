@@ -1,13 +1,15 @@
 import asyncio
 import contextlib
 import mimetypes
+import re
 import secrets
-from collections.abc import AsyncIterator
+import shutil
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote, unquote
 
 from fastapi import (
@@ -23,8 +25,11 @@ from fastapi import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.routing import APIRoute
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .. import __version__
@@ -55,6 +60,17 @@ PAGE_POLICY = (
 # Ответы API и загруженные файлы не исполняются как страница, даже если это HTML или SVG
 DATA_POLICY = b"default-src 'none'; sandbox"
 TOKEN_REQUIRED = "Нужен токен доступа"
+NO_SPACE = "На сервере не хватает места"
+_CYRILLIC = re.compile("[а-яА-Я]")
+_FRAMEWORK_ERRORS = {404: "Не найдено", 405: "Метод не поддерживается"}
+MAX_FORM_FILES = 4
+MAX_FORM_FIELDS = 8
+MAX_FORM_FIELD = 1 << 16
+PROTECTED_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {"description": TOKEN_REQUIRED},
+    422: {"description": "Неверные параметры: одна строка в поле detail"},
+}
+_BEARER = HTTPBearer(auto_error=False, description="Токен из переменной STT_RU_TOKEN")
 
 
 class JobInfo(BaseModel):
@@ -76,6 +92,7 @@ class JobInfo(BaseModel):
     segments: int | None = Field(None, description="Число распознанных фрагментов")
     diarize: bool = Field(description="Разделять говорящих")
     speakers: int | None = Field(None, description="Точное число говорящих, если задано")
+    warning: str | None = Field(None, description="Пояснение к результату")
     error: str | None = Field(None, description="Текст ошибки")
 
 
@@ -120,6 +137,44 @@ async def _invalid_request(request: Request, error: Exception) -> JSONResponse:
     return JSONResponse({"detail": text}, status_code=422)
 
 
+async def _http_error(request: Request, error: Exception) -> JSONResponse:
+    assert isinstance(error, StarletteHTTPException)
+    settings: _Settings = request.app.state.settings
+    # FastAPI прячет ошибку записи тела в «There was an error parsing the body»
+    if isinstance(error.__cause__, OSError):
+        settings.jobs.log_error(f"Не удалось сохранить загрузку: {error.__cause__}")
+        return JSONResponse({"detail": NO_SPACE}, status_code=507)
+    detail = str(error.detail)
+    # Сообщения своего кода русские, а у Starlette и FastAPI английские
+    if not _CYRILLIC.search(detail):
+        detail = _FRAMEWORK_ERRORS.get(error.status_code, "Не удалось разобрать запрос")
+    return JSONResponse({"detail": detail}, error.status_code, error.headers)
+
+
+class _LimitedRequest(Request):
+    def form(
+        self,
+        *,
+        max_files: int | float = MAX_FORM_FILES,
+        max_fields: int | float = MAX_FORM_FIELDS,
+        max_part_size: int = MAX_FORM_FIELD,
+    ) -> Any:
+        # Поля формы Starlette держит в памяти, по умолчанию до 1000 полей по 1 МБ на запрос
+        return super().form(
+            max_files=max_files, max_fields=max_fields, max_part_size=max_part_size
+        )
+
+
+class _LimitedRoute(APIRoute):
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def limited(request: Request) -> Response:
+            return await handler(_LimitedRequest(request.scope, request.receive, request._send))
+
+        return limited
+
+
 def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 << 20) -> FastAPI:
     """
     Веб-приложение сервиса: страница и REST API
@@ -159,6 +214,7 @@ def create_app(jobs: JobQueue, *, token: str | None = None, max_size: int = 500 
     )
     app.state.settings = _Settings(jobs, token or None, max_size)
     app.add_exception_handler(RequestValidationError, _invalid_request)
+    app.add_exception_handler(StarletteHTTPException, _http_error)
     app.add_middleware(_Guard, max_body=max_size + UPLOAD_OVERHEAD)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.include_router(router)
@@ -185,7 +241,11 @@ def _authorized(request: Request, settings: _Settings) -> bool:
     return secrets.compare_digest(given, settings.token.encode())
 
 
-def _authorize(request: Request, settings: Settings) -> None:
+def _authorize(
+    request: Request,
+    settings: Settings,
+    _: Annotated[HTTPAuthorizationCredentials | None, Depends(_BEARER)] = None,
+) -> None:
     if not _authorized(request, settings):
         raise HTTPException(401, TOKEN_REQUIRED, {"WWW-Authenticate": "Bearer"})
 
@@ -213,11 +273,12 @@ def _info(jobs: JobQueue, job: Job) -> JobInfo:
         segments=None if job.transcript is None else len(job.transcript.segments),
         diarize=job.diarize,
         speakers=job.speakers,
+        warning=job.warning,
         error=job.error,
     )
 
 
-router = APIRouter()
+router = APIRouter(route_class=_LimitedRoute)
 protected = [Depends(_authorize)]
 
 
@@ -256,9 +317,11 @@ def service_info(request: Request, settings: Settings) -> ServiceInfo:
     summary="Поставить файл в очередь",
     dependencies=protected,
     responses={
+        **PROTECTED_RESPONSES,
+        400: {"description": "Не удалось разобрать запрос"},
         413: {"description": "Файл больше наибольшего размера"},
-        422: {"description": "Неверные параметры"},
         503: {"description": "Очередь заполнена"},
+        507: {"description": NO_SPACE},
     },
 )
 def create_job(
@@ -294,6 +357,8 @@ def create_job(
         raise HTTPException(422, str(error)) from error
     except QueueFullError as error:
         raise HTTPException(503, str(error), {"Retry-After": "60"}) from error
+    except OSError as error:
+        raise HTTPException(507, NO_SPACE) from error
     response.headers["Location"] = f"/v1/jobs/{job.id}"
     return _info(settings.jobs, job)
 
@@ -309,7 +374,9 @@ def get_job(job_id: str, settings: Settings) -> JobInfo:
     dependencies=protected,
     response_class=Response,
     responses={
+        **PROTECTED_RESPONSES,
         400: {"description": "Неизвестный формат"},
+        404: {"description": MISSING},
         409: {"description": "Задача не готова или закончилась ошибкой"},
     },
 )
@@ -439,9 +506,15 @@ class _Guard:
             return
         length = dict(scope["headers"]).get(b"content-length")
         limit = self.max_body - UPLOAD_OVERHEAD
-        if length is not None and length.isdigit() and int(length) > self.max_body:
-            await JSONResponse({"detail": _too_large(limit)}, 413)(scope, receive, secure)
-            return
+        if length is not None and length.isdigit():
+            if int(length) > self.max_body:
+                await JSONResponse({"detail": _too_large(limit)}, 413)(scope, receive, secure)
+                return
+            # Тело лежит на диске дважды: во временном файле и в каталоге задачи
+            if 2 * int(length) > shutil.disk_usage(settings.jobs.directory).free:
+                settings.jobs.log_error(f"Нет места для загрузки на {int(length)} байт")
+                await JSONResponse({"detail": NO_SPACE}, 507)(scope, receive, secure)
+                return
         received = 0
 
         async def counted() -> Message:

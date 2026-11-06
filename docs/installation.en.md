@@ -4,7 +4,7 @@ The library and the `stt-ru` CLI can be installed with `pip` or from the project
 
 ## Dependencies
 
-*   `python` - 3.11 or newer
+*   `python` - 3.11 to 3.14: ONNX Runtime has no builds for 3.15 yet
 *   [`onnx-asr`](https://github.com/istupakov/onnx-asr) - 0.12, with ONNX Runtime for CPU and model downloads from Hugging Face
 *   `numpy`
 *   `soundfile`
@@ -40,13 +40,15 @@ uv add "stt-ru[ffmpeg]"
 
 ## Models { #models }
 
-A model is downloaded from Hugging Face on the first transcription and kept in its cache: the default model `gigaam-v3-e2e-rnnt` in int8 quantization together with Silero VAD takes about 230 MB. The cache is in `~/.cache/huggingface`; the `HF_HOME` environment variable sets another folder:
+A model is downloaded from Hugging Face on the first transcription and kept in its cache: the default model `gigaam-v3-e2e-rnnt` in int8 quantization together with Silero VAD takes about 230 MB, and the [speaker separation](models.md#diarization) models about 35 MB more on first use. The cache is in `~/.cache/huggingface`; the `HF_HOME` environment variable sets another folder:
 
 ``` bash
 export HF_HOME=/data/models
 ```
 
-A model from the cache works without network. For a computer without internet, copy the whole cache folder to it - it holds both the model and Silero VAD - and point `HF_HOME` to it (see also [Models](models.md#local)).
+A model from the cache works without network. For a computer without internet, copy the whole cache folder to it - it holds both the model and Silero VAD - and point `HF_HOME` to it (see also [Models](models.md#local)). To have the speaker separation models in the cache too, run a transcription with `--diarize` once before copying.
+
+stt-ru turns off ONNX Runtime telemetry: no device ID is saved and no device information is sent anywhere. If your own program imports `onnxruntime` before `stt_ru`, set `ORT_DISABLE_TELEMETRY=1` yourself.
 
 ## GPUs and other devices { #devices }
 

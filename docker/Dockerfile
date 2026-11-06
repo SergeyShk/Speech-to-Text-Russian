@@ -21,7 +21,8 @@ FROM python:3.12-slim
 ARG MODEL=gigaam-v3-e2e-rnnt
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/opt/huggingface
+    HF_HOME=/opt/huggingface \
+    ORT_DISABLE_TELEMETRY=1
 RUN useradd --uid 1000 --create-home stt \
     && mkdir -p /opt/huggingface /data \
     && chown stt:stt /opt/huggingface /data
@@ -35,7 +36,7 @@ WORKDIR /data
 EXPOSE 8000
 # SIGINT, а не SIGTERM: так останавливаются без потерь и сервис, и пакетное распознавание
 STOPSIGNAL SIGINT
-COPY docker/healthcheck.py /opt/stt-ru/healthcheck.py
+COPY docker/healthcheck.py docker/MODELS.md /opt/stt-ru/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=2s \
     CMD ["python", "/opt/stt-ru/healthcheck.py"]
 ENTRYPOINT ["stt-ru"]
