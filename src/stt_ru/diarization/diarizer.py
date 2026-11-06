@@ -64,7 +64,8 @@ class Diarizer:
         с Hugging Face в его кэш, дальше загружаются из кэша
 
     Аргументы:
-        threshold (float): Порог кластеризации: чем больше, тем меньше говорящих (см. cluster)
+        threshold (float): Порог кластеризации: чем больше, тем охотнее голоса сливаются
+            (см. cluster)
         providers (list[str]): Провайдеры ONNX Runtime; None - default_providers()
 
     Исключения:

@@ -39,7 +39,7 @@
 
 ## Installation
 
-Python 3.11 or newer is required.
+Python 3.11 to 3.14 is required: ONNX Runtime has no builds for 3.15 yet.
 
 ```bash
 pip install stt-ru
@@ -65,6 +65,7 @@ The model (about 230 MB) is downloaded from Hugging Face on the first run. GPUs 
 stt-ru transcribe call.wav                                       # text to the console
 stt-ru transcribe calls/ -o out/ -f srt,ass,csv --summary out/all.csv
 stt-ru transcribe calls/ -o out/ --watch                         # folder monitoring
+stt-ru transcribe meeting.mp3 --diarize                          # speaker separation
 stt-ru evaluate eval.csv -m gigaam-v3-e2e-rnnt -m t-tech/t-one   # model comparison
 stt-ru serve                                                     # http://127.0.0.1:8000
 ```
@@ -87,7 +88,7 @@ PosixPath('call.srt')
 
 The CLI messages and speaker names ("Канал N", Channel N) are in Russian.
 
-Example notebooks are in the [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks) directory: quick start, call analytics, a long recording and subtitles, model evaluation, the web service from Python. Each opens in Colab; descriptions are on the [Examples](https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/) page. The notebooks are in Russian.
+Example notebooks are in the [notebooks/](https://github.com/SergeyShk/Speech-to-Text-Russian/tree/master/notebooks) directory: quick start, call analytics, a long recording and subtitles, model evaluation, the web service from Python, speaker separation. Each opens in Colab; descriptions are on the [Examples](https://sergeyshk.github.io/Speech-to-Text-Russian/en/examples/) page. The notebooks are in Russian.
 
 ## Docker
 
@@ -155,4 +156,4 @@ Bug reports, ideas and pull requests are welcome, in Russian or English - [issue
 
 ## License
 
-The code is distributed under the [MIT](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/LICENSE.txt) license. The GigaAM-v3 model is distributed under the MIT license; other onnx-asr models have their own licenses.
+The code is distributed under the [MIT](https://github.com/SergeyShk/Speech-to-Text-Russian/blob/master/LICENSE.txt) license. The GigaAM-v3 model is distributed under the MIT license; other onnx-asr models have their own licenses. The licenses of the speaker separation models are on the [Models](https://sergeyshk.github.io/Speech-to-Text-Russian/en/models/#diarization) page.

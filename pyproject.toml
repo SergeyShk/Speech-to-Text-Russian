@@ -14,12 +14,14 @@ keywords = [
     "speech-to-text",
     "STT",
     "transcription",
+    "diarization",
+    "speaker diarization",
     "subtitles",
     "GigaAM",
     "russian",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -44,7 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 eval = ["jiwer>=3.0.3"]
 ffmpeg = ["imageio-ffmpeg>=0.6"]
-service = ["fastapi>=0.124", "python-multipart>=0.0.33", "starlette>=0.39", "uvicorn>=0.30"]
+service = ["fastapi>=0.133", "python-multipart>=0.0.33", "starlette>=1.3.1", "uvicorn>=0.30"]
 
 [project.scripts]
 stt-ru = "stt_ru.cli:main"
@@ -73,7 +75,7 @@ explicit = true
 
 [dependency-groups]
 test = [
-    "fastapi>=0.124",
+    "fastapi>=0.133",
     "httpx>=0.27",
     "imageio-ffmpeg>=0.6",
     "jiwer>=3.0.3",
@@ -81,7 +83,7 @@ test = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "python-multipart>=0.0.33",
-    "starlette>=0.39",
+    "starlette>=1.3.1",
     "uvicorn>=0.30",
 ]
 lint = ["mypy>=1.14", "pre-commit>=4.0", "ruff>=0.9"]

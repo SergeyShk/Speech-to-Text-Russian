@@ -5,7 +5,7 @@
 !!! info ""
     **stt_ru.Transcriber**
 
-`Transcriber` loads a model once and uses it to transcribe files and in-memory recordings. The channels of a stereo recording are recognized separately, and recordings longer than 10 minutes in windows of about 10 minutes cut at a pause. One object can be used from several threads.
+`Transcriber` loads a model once and uses it to transcribe files and in-memory recordings. The channels of a stereo recording are recognized separately, channels of one source are mixed into one, and recordings longer than 10 minutes in windows of about 10 minutes cut at a pause. One object can be used from several threads.
 
 | Parameter | Type | Default | Description |
 | :-------- | :--- | :------ | :---------- |
@@ -17,12 +17,12 @@
 | `split_channels` | bool | `True` | Recognize channels separately; `False` - mix them into one |
 | `ffmpeg` | str | `None` | Path to ffmpeg; `None` - search in `PATH` and `imageio-ffmpeg` |
 | `diarize` | bool | `False` | [Separate speakers](transcribe.md#diarization) in a single-track recording |
-| `speakers` | int | `None` | Exact number of speakers from 1 to 100, turns on `diarize`; `None` - detected from the recording |
+| `speakers` | int | `None` | Exact number of speakers, an integer from 1 to 100, turns on `diarize`; `None` - detected from the recording |
 
 | Method | Description |
 | :----- | :---------- |
 | `transcribe(path, *, diarize=None, speakers=None)` | Transcribes a file and returns a `Transcript` |
-| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None)` | Transcribes an in-memory recording (`Audio`) |
+| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None, should_stop=None)` | Transcribes an in-memory recording (`Audio`); `should_stop` is called between steps, and `True` interrupts the work with `StoppedError` |
 | `speaker_options(diarize=None, speakers=None)` | Speaker separation values for one recording: a pair of "separate" and "exact number" |
 | `load(path, *, max_duration=None)` | Reads a file with a sample rate the model accepts; `max_duration` in seconds limits the recording length |
 
@@ -34,7 +34,7 @@
 >>> result.duration, result.channels, len(result.segments)
 (15.751, 2, 5)
 >>> result.segments[0]
-Segment(start=0.994, end=9.054, text='Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии.', channel=1)
+Segment(start=0.994, end=9.054, text='Наталья, благодарю вас за ожидание. По данному вопросу я сейчас ваш звонок переведу на специалиста профильного подразделения. Оставайтесь, пожалуйста, на линии.', channel=1, speaker_id=None)
 ```
 
 ## Result { #transcript }
@@ -75,10 +75,10 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 
 | Parameter | Type | Default | Description |
 | :-------- | :--- | :------ | :---------- |
-| `threshold` | float | `0.7` | Voice merging threshold: the higher it is, the fewer speakers |
+| `threshold` | float | `0.7` | Voice merging threshold: the higher it is, the more readily they merge |
 | `providers` | list[str] | `None` | ONNX Runtime providers; `None` - the same as for `Transcriber` |
 
-`diarize(samples, sample_rate, speakers=None)` takes a one-dimensional float32 sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap. To recognize with your own threshold, set `transcriber.diarizer = Diarizer(threshold=0.9)` and call it with `diarize=True`.
+`diarize(samples, sample_rate, speakers=None, *, speech=None, should_stop=None)` takes a one-dimensional float32 sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap. `speech` holds the spans of actual speech in seconds: a voice matters the more of it they contain, so music does not take a person's place; `Transcriber` passes the recognized segments here. To recognize with your own threshold, set `transcriber.diarizer = Diarizer(threshold=0.9)` and call it with `diarize=True`.
 
 ## Export { #export }
 
@@ -134,5 +134,6 @@ All exceptions inherit `SttRuError`, and some also inherit a built-in Python cla
 | `ModelError` | - | The model is not supported, could not be downloaded or its files are corrupted |
 | `ParameterError` | `ValueError` | Invalid parameter value: format, speech detection, evaluation references |
 | `MissingDependencyError` | `ImportError` | A package from an extra is missing, for example `jiwer` for quality evaluation |
+| `StoppedError` | - | Transcription interrupted through `should_stop` |
 
 A missing file raises the built-in `FileNotFoundError`.

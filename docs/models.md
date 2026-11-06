@@ -58,7 +58,9 @@ stt-ru transcribe call.wav -m gigaam-v3-e2e-rnnt --model-dir /models/gigaam-v3-e
 | Модель | Что делает | Лицензия |
 | :----- | :--------- | :------- |
 | [pyannote segmentation 3.0](https://huggingface.co/onnx-community/pyannote-segmentation-3.0) | Находит, кто говорит, в окнах по 10 с | MIT |
-| [CAM++ из WeSpeaker](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM) | Считает голосовой отпечаток, чтобы свести реплики одного человека | Apache-2.0 |
+| [CAM++ из WeSpeaker](https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus-LM) | Считает голосовой отпечаток, чтобы свести реплики одного человека | Apache-2.0 на карточке, CC BY 4.0 по словам авторов (см. ниже) |
+
+На карточке CAM++ указана Apache-2.0, а [авторы WeSpeaker](https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md) пишут, что модели, обученные на VoxCeleb, следуют лицензии этого набора данных, CC BY 4.0. Если это важно для вашего применения, ориентируйтесь на более строгую.
 
 ## Поиск речи { #vad }
 

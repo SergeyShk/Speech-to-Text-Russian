@@ -3915,21 +3915,21 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", marker = "extra == 'service'", specifier = ">=0.124" },
+    { name = "fastapi", marker = "extra == 'service'", specifier = ">=0.133" },
     { name = "imageio-ffmpeg", marker = "extra == 'ffmpeg'", specifier = ">=0.6" },
     { name = "jiwer", marker = "extra == 'eval'", specifier = ">=3.0.3" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "onnx-asr", extras = ["cpu", "hub"], specifier = ">=0.12,<0.13" },
     { name = "python-multipart", marker = "extra == 'service'", specifier = ">=0.0.33" },
     { name = "soundfile", specifier = ">=0.12.1" },
-    { name = "starlette", marker = "extra == 'service'", specifier = ">=0.39" },
+    { name = "starlette", marker = "extra == 'service'", specifier = ">=1.3.1" },
     { name = "uvicorn", marker = "extra == 'service'", specifier = ">=0.30" },
 ]
 provides-extras = ["eval", "ffmpeg", "service"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastapi", specifier = ">=0.124" },
+    { name = "fastapi", specifier = ">=0.133" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "imageio-ffmpeg", specifier = ">=0.6" },
     { name = "jiwer", specifier = ">=3.0.3" },
@@ -3944,7 +3944,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "python-multipart", specifier = ">=0.0.33" },
     { name = "ruff", specifier = ">=0.9" },
-    { name = "starlette", specifier = ">=0.39" },
+    { name = "starlette", specifier = ">=1.3.1" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 docs = [
@@ -3970,7 +3970,7 @@ notebooks = [
     { name = "pyarrow", specifier = ">=17" },
 ]
 test = [
-    { name = "fastapi", specifier = ">=0.124" },
+    { name = "fastapi", specifier = ">=0.133" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "imageio-ffmpeg", specifier = ">=0.6" },
     { name = "jiwer", specifier = ">=3.0.3" },
@@ -3978,7 +3978,7 @@ test = [
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "python-multipart", specifier = ">=0.0.33" },
-    { name = "starlette", specifier = ">=0.39" },
+    { name = "starlette", specifier = ">=1.3.1" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
