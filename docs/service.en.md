@@ -118,4 +118,4 @@ app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-The `/data/stt` folder must exist. Your own object instead of `Transcriber` must support `speaker_options`, `load` and `transcribe_audio` with the `diarize`, `speakers` and `should_stop` parameters.
+The `/data/stt` folder must exist. Your own object instead of `Transcriber` must support `speaker_options`, `load`, `recognizer.model` and `transcribe_audio` with the `diarize`, `speakers`, `should_stop` and `on_warning` parameters.

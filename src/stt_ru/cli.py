@@ -727,6 +727,8 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
             parser.error(f"--max-duration слишком большое: {args.max_duration:g}")
         if args.max_size * (1 << 20) < 1:
             parser.error(f"--max-size меньше одного байта: {args.max_size:g}")
+        if not math.isfinite(args.max_size * (1 << 20)):
+            parser.error(f"--max-size слишком большое: {args.max_size:g}")
         if args.data_dir is not None:
             if not args.data_dir or not Path(args.data_dir).is_dir():
                 parser.error(f"каталога нет: {args.data_dir}")

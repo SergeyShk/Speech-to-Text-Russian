@@ -22,7 +22,7 @@
 | Метод | Описание |
 | :---- | :------- |
 | `transcribe(path, *, diarize=None, speakers=None)` | Распознает файл и возвращает `Transcript` |
-| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None, should_stop=None)` | Распознает запись в памяти (`Audio`); `should_stop` вызывается между шагами, и `True` прерывает работу с `StoppedError` |
+| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None, should_stop=None, on_warning=None)` | Распознает запись в памяти (`Audio`); `should_stop` вызывается между шагами, и `True` прерывает работу с `StoppedError`; `on_warning` получает текст предупреждения о числе говорящих вместо `warnings.warn` |
 | `speaker_options(diarize=None, speakers=None)` | Значения разделения говорящих для одной записи: пара «разделять» и «точное число» |
 | `load(path, *, max_duration=None)` | Читает файл с частотой, которую принимает модель; `max_duration` в секундах ограничивает длину записи |
 
@@ -78,7 +78,7 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 | `threshold` | float | `0.7` | Порог сведения голосов: чем больше, тем охотнее они сливаются |
 | `providers` | list[str] | `None` | Провайдеры ONNX Runtime; `None` - как у `Transcriber` |
 
-`diarize(samples, sample_rate, speakers=None, *, speech=None, should_stop=None)` принимает одномерный массив отсчетов float32 и возвращает список `Turn` по времени начала: `start` и `end` в секундах, `speaker` - номер с единицы. Реплики разных людей могут перекрываться. `speech` - отрезки настоящей речи в секундах: голос тем важнее, чем больше его в них, поэтому музыка не занимает место человека; `Transcriber` передает сюда распознанные фрагменты. Чтобы распознавание работало со своим порогом, задайте `transcriber.diarizer = Diarizer(threshold=0.9)` и вызывайте его с `diarize=True`.
+`diarize(samples, sample_rate, speakers=None, *, speech=None, should_stop=None, on_warning=None)` принимает одномерный массив отсчетов float32 и возвращает список `Turn` по времени начала: `start` и `end` в секундах, `speaker` - номер с единицы. Реплики разных людей могут перекрываться. `speech` - отрезки настоящей речи в секундах: голос тем важнее, чем больше его в них, поэтому музыка не занимает место человека; `Transcriber` передает сюда распознанные фрагменты. Чтобы распознавание работало со своим порогом, задайте `transcriber.diarizer = Diarizer(threshold=0.9)` и вызывайте его с `diarize=True`.
 
 ## Экспорт { #export }
 

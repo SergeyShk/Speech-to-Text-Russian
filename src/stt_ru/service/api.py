@@ -29,8 +29,6 @@ from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette._utils import AwaitableOrContextManager
-from starlette.datastructures import FormData
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -160,7 +158,7 @@ class _LimitedRequest(Request):
         max_files: int | float = MAX_FORM_FILES,
         max_fields: int | float = MAX_FORM_FIELDS,
         max_part_size: int = MAX_FORM_FIELD,
-    ) -> AwaitableOrContextManager[FormData]:
+    ) -> Any:
         # Поля формы Starlette держит в памяти, по умолчанию до 1000 полей по 1 МБ на запрос
         return super().form(
             max_files=max_files, max_fields=max_fields, max_part_size=max_part_size
@@ -359,6 +357,8 @@ def create_job(
         raise HTTPException(422, str(error)) from error
     except QueueFullError as error:
         raise HTTPException(503, str(error), {"Retry-After": "60"}) from error
+    except OSError as error:
+        raise HTTPException(507, NO_SPACE) from error
     response.headers["Location"] = f"/v1/jobs/{job.id}"
     return _info(settings.jobs, job)
 
@@ -510,7 +510,8 @@ class _Guard:
             if int(length) > self.max_body:
                 await JSONResponse({"detail": _too_large(limit)}, 413)(scope, receive, secure)
                 return
-            if int(length) > shutil.disk_usage(settings.jobs.directory).free:
+            # Тело лежит на диске дважды: во временном файле и в каталоге задачи
+            if 2 * int(length) > shutil.disk_usage(settings.jobs.directory).free:
                 settings.jobs.log_error(f"Нет места для загрузки на {int(length)} байт")
                 await JSONResponse({"detail": NO_SPACE}, 507)(scope, receive, secure)
                 return

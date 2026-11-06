@@ -58,9 +58,19 @@ class FakeDiarizer:
         self.calls = []
         FakeDiarizer.instances.append(self)
 
-    def diarize(self, samples, sample_rate, speakers=None, *, speech=None, should_stop=None):
+    def diarize(
+        self,
+        samples,
+        sample_rate,
+        speakers=None,
+        *,
+        speech=None,
+        should_stop=None,
+        on_warning=None,
+    ):
         self.calls.append((samples.copy(), sample_rate, speakers))
         self.speech = speech
+        self.on_warning = on_warning
         return FakeDiarizer.turns
 
 
@@ -624,8 +634,41 @@ class TestOneSource:
         transcript = Transcriber().transcribe_audio(Audio(samples, 8000))
         assert transcript.channels == 2
 
+    def test_opposite_phase_keeps_channel(self, fake):
+        # Сведение таких каналов дало бы тишину и пустой результат
+        samples = self.source()
+        samples[:, 1] = -samples[:, 0]
+        assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 1
+        (waveforms, _) = fake[0].calls[0]
+        assert np.array_equal(waveforms[0], samples[:, 0])
+
+    def test_common_tone_keeps_speakers(self, fake):
+        # В линейной громкости короткий гудок в обоих каналах перевешивает всю речь
+        samples = self.source(seconds=16.0)
+        samples[:64000, 1] *= 0.001
+        samples[64000:, 0] *= 0.001
+        samples[:2400] = np.sin(np.arange(2400) * 0.8)[:, None] * 2
+        assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 2
+
+    def test_shared_silence_keeps_speakers(self, fake):
+        # Звонок с утечкой между каналами: общая тишина подняла бы корреляцию выше порога
+        first, second = self.source(seconds=20.0).T
+        first[80000:], second[:80000] = 0, 0
+        samples = np.stack([first + 0.7 * second, second + 0.7 * first], axis=1)
+        samples[:, :] *= np.repeat(np.arange(200) % 8 < 3, 800)[:, None]
+        assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 2
+
+    def test_on_warning_reaches_diarizer(self, diarizing):
+        seen = []
+        Transcriber(diarize=True).transcribe_audio(mono(), on_warning=seen.append)
+        diarizing[0].on_warning("текст")
+        assert seen == ["текст"]
+
     def test_short_recording_kept(self, fake):
         assert Transcriber().transcribe_audio(Audio(self.source(seconds=2.0), 8000)).channels == 2
+
+    def test_silence_is_not_same_source(self):
+        assert not same_envelope(np.zeros(64000), np.zeros(64000), 800)
 
     def test_constant_level_is_not_same_source(self):
         level = np.ones(64000, dtype=np.float32) * 0.1

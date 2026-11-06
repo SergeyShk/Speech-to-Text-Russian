@@ -118,4 +118,4 @@ app = create_app(jobs, token="my-secret-token", max_size=200 << 20)
 uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-Каталог `/data/stt` должен существовать. Свой объект вместо `Transcriber` должен поддерживать `speaker_options`, `load` и `transcribe_audio` с параметрами `diarize`, `speakers` и `should_stop`.
+Каталог `/data/stt` должен существовать. Свой объект вместо `Transcriber` должен поддерживать `speaker_options`, `load`, `recognizer.model` и `transcribe_audio` с параметрами `diarize`, `speakers`, `should_stop` и `on_warning`.

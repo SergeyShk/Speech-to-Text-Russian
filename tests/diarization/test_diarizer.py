@@ -230,7 +230,7 @@ class TestSpeech:
     def test_weight_only_from_speech(self, embedder, monkeypatch):
         seen = {}
 
-        def spy(vectors, threshold, speakers, weights):
+        def spy(vectors, threshold, speakers, weights, on_warning):
             seen["weights"] = weights.tolist()
             return np.zeros(len(vectors), dtype=np.int64)
 
@@ -243,6 +243,11 @@ class TestSpeech:
         assert seen["weights"][0] > 3 * RATE
         Diarizer().diarize(samples, RATE, speech=[])
         assert set(seen["weights"]) == {0}
+
+    def test_warning_goes_to_callback(self, embedder):
+        seen = []
+        Diarizer().diarize(signal((0.5, 4), (0.25, 4)), RATE, 50, on_warning=seen.append)
+        assert "Указано говорящих 50" in seen[0]
 
     def test_speech_outside_recording(self, embedder):
         assert Diarizer().diarize(signal((0.5, 2)), RATE, speech=[(100.0, 200.0)])

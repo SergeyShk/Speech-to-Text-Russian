@@ -27,6 +27,7 @@ class FakeTranscriber:
         self.speakers = None
         self.diarizer = None
         self.stops = []
+        self.warning = None
 
     speaker_options = Transcriber.speaker_options
 
@@ -34,12 +35,21 @@ class FakeTranscriber:
         return load_audio(path, max_duration=max_duration)
 
     def transcribe_audio(
-        self, audio, source=None, *, diarize=None, speakers=None, should_stop=None
+        self,
+        audio,
+        source=None,
+        *,
+        diarize=None,
+        speakers=None,
+        should_stop=None,
+        on_warning=None,
     ):
         self.sources.append(source)
         self.options.append((diarize, speakers))
         self.stops.append(should_stop)
         self.gate.wait(10)
+        if self.warning:
+            on_warning(self.warning)
         if "silent" in source:
             raise RuntimeError
         if "broken" in source:

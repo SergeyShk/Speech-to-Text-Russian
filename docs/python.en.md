@@ -22,7 +22,7 @@
 | Method | Description |
 | :----- | :---------- |
 | `transcribe(path, *, diarize=None, speakers=None)` | Transcribes a file and returns a `Transcript` |
-| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None, should_stop=None)` | Transcribes an in-memory recording (`Audio`); `should_stop` is called between steps, and `True` interrupts the work with `StoppedError` |
+| `transcribe_audio(audio, source=None, *, diarize=None, speakers=None, should_stop=None, on_warning=None)` | Transcribes an in-memory recording (`Audio`); `should_stop` is called between steps, and `True` interrupts the work with `StoppedError`; `on_warning` receives the text of a warning about the number of speakers instead of `warnings.warn` |
 | `speaker_options(diarize=None, speakers=None)` | Speaker separation values for one recording: a pair of "separate" and "exact number" |
 | `load(path, *, max_duration=None)` | Reads a file with a sample rate the model accepts; `max_duration` in seconds limits the recording length |
 
@@ -78,7 +78,7 @@ Segment(start=0.994, end=9.054, text='Наталья, благодарю вас 
 | `threshold` | float | `0.7` | Voice merging threshold: the higher it is, the more readily they merge |
 | `providers` | list[str] | `None` | ONNX Runtime providers; `None` - the same as for `Transcriber` |
 
-`diarize(samples, sample_rate, speakers=None, *, speech=None, should_stop=None)` takes a one-dimensional float32 sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap. `speech` holds the spans of actual speech in seconds: a voice matters the more of it they contain, so music does not take a person's place; `Transcriber` passes the recognized segments here. To recognize with your own threshold, set `transcriber.diarizer = Diarizer(threshold=0.9)` and call it with `diarize=True`.
+`diarize(samples, sample_rate, speakers=None, *, speech=None, should_stop=None, on_warning=None)` takes a one-dimensional float32 sample array and returns a list of `Turn` ordered by start time: `start` and `end` in seconds, `speaker` - a number from one. Turns of different people can overlap. `speech` holds the spans of actual speech in seconds: a voice matters the more of it they contain, so music does not take a person's place; `Transcriber` passes the recognized segments here. To recognize with your own threshold, set `transcriber.diarizer = Diarizer(threshold=0.9)` and call it with `diarize=True`.
 
 ## Export { #export }
 

@@ -108,6 +108,7 @@ class Diarizer:
         *,
         speech: Sequence[tuple[float, float]] | None = None,
         should_stop: Callable[[], bool] | None = None,
+        on_warning: Callable[[str], None] | None = None,
     ) -> list[Turn]:
         """
         Поиск реплик в одноканальной записи
@@ -120,6 +121,8 @@ class Diarizer:
                 чем больше его здесь, поэтому музыка не занимает место человека;
                 None - важна любая найденная речь
             should_stop (Callable): Вызывается между шагами; True прерывает работу
+            on_warning (Callable): Получает текст предупреждения о числе говорящих; None -
+                warnings.warn
 
         Вывод:
             list[Turn]: Реплики по времени начала; пусто, если речи нет
@@ -150,7 +153,7 @@ class Diarizer:
             return []
         matrix = np.stack(vectors)
         matrix /= np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-9)
-        labels = cluster(matrix, self.threshold, speakers, np.array(weights))
+        labels = cluster(matrix, self.threshold, speakers, np.array(weights), on_warning)
         return _turns(len(waveform), starts, active, owners, labels)
 
     def _resample(self, samples: Samples, sample_rate: int) -> Samples:

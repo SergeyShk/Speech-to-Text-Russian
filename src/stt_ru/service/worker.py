@@ -344,13 +344,19 @@ class JobQueue:
                 job.status = "running"
             self._run(job)
 
+    def _warn(self, job: Job, text: str) -> None:
+        with self._lock:
+            job.warning = text
+        self._say(f"[{job.id}] {job.filename}: предупреждение - {text}")
+
     def _run(self, job: Job) -> None:
         try:
             audio = self.transcriber.load(job.path, max_duration=self.max_duration)
             peaks = [[round(float(peak), 3) for peak in row] for row in audio.peaks(PEAKS)]
             with self._lock:
                 job.duration, job.channels, job.peaks = audio.duration, audio.num_channels, peaks
-            if job.diarize and audio.num_channels == 1 and self.transcriber.diarizer is None:
+            loaded = getattr(self.transcriber, "diarizer", True) is not None
+            if job.diarize and audio.num_channels == 1 and not loaded:
                 self._say(f"[{job.id}] Загрузка моделей разделения говорящих")
             transcript = self.transcriber.transcribe_audio(
                 audio,
@@ -358,6 +364,7 @@ class JobQueue:
                 diarize=job.diarize,
                 speakers=job.speakers,
                 should_stop=lambda: job.deleted,
+                on_warning=lambda text: self._warn(job, text),
             )
         except StoppedError:
             with self._lock:
@@ -382,7 +389,7 @@ class JobQueue:
                 job.transcript, job.finished = transcript, self.clock()
                 job.status = "done"
                 if job.diarize and transcript.channels > 1:
-                    job.warning = CHANNELS_WARNING
+                    job.diarize, job.warning = False, CHANNELS_WARNING
             seconds = job.finished - (job.started or job.finished)
             self._say(
                 f"[{job.id}] {job.filename}: фрагментов {len(transcript.segments)}, "

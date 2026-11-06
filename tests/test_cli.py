@@ -1118,6 +1118,7 @@ class TestServeLimits:
             (["--keep", "1e12"], "--keep не больше 87600 часов"),
             (["--max-duration", "1e308"], "--max-duration слишком большое"),
             (["--max-size", "0.0000001"], "--max-size меньше одного байта"),
+            (["--max-size", "1e308"], "--max-size слишком большое"),
         ],
     )
     def test_refused_before_model(self, fake, capsys, options, message):

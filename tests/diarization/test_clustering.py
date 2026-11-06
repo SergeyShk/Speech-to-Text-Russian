@@ -157,6 +157,13 @@ def test_too_many_speakers_warned():
         cluster(groups(10, 10), speakers=8)
 
 
+def test_warning_goes_to_callback(recwarn):
+    seen = []
+    cluster(groups(10, 10), speakers=8, on_warning=seen.append)
+    assert "Указано говорящих 8" in seen[0]
+    assert len(recwarn) == 0
+
+
 @pytest.mark.parametrize("speakers", [2, 5])
 def test_near_number_not_warned(speakers, recwarn):
     cluster(groups(10, 10), speakers=speakers)

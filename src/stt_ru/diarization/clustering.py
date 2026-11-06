@@ -1,4 +1,5 @@
 import warnings
+from collections.abc import Callable
 from numbers import Integral
 
 import numpy as np
@@ -24,6 +25,7 @@ def cluster(
     threshold: float = DEFAULT_THRESHOLD,
     speakers: int | None = None,
     weights: np.ndarray | None = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> np.ndarray:
     """
     Кластеризация эмбеддингов говорящих
@@ -45,6 +47,8 @@ def cluster(
             по threshold и MIN_SHARE
         weights (numpy.ndarray): Вес каждого вектора, например длительность речи; None или все
             нули - равные
+        on_warning (Callable): Получает текст предупреждения о завышенном числе; None -
+            warnings.warn
 
     Вывод:
         numpy.ndarray: Номер кластера каждого вектора, с нуля
@@ -78,11 +82,14 @@ def cluster(
     else:
         found = len(np.unique(automatic))
         if speakers > found + EXTRA_SPEAKERS:
-            warnings.warn(
+            text = (
                 f"Указано говорящих {speakers}, а по записи их около {found}: "
-                "лишние говорящие дробят людей",
-                stacklevel=2,
+                "лишние говорящие дробят людей"
             )
+            if on_warning is None:
+                warnings.warn(text, stacklevel=2)
+            else:
+                on_warning(text)
         if len(np.unique(labels)) < speakers:
             labels = _agglomerate(chosen, threshold, speakers)
         labels = _refined(chosen, _absorb_small(chosen, labels, used, speakers), used)

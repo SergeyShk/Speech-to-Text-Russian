@@ -255,15 +255,17 @@ function renderBanner() {
 async function refresh(id) {
   try {
     const response = await api(`/v1/jobs/${encodeURIComponent(id)}`);
-    state.failedPolls = 0;
+    // Сервис за прокси: упавший сервис выглядит как 502, а не как обрыв
+    if (response.status >= 500) return false;
     if (response.status === 404) {
       const open = state.current === id;
       forget(id);
       if (open) state.gone = "Задача удалена или срок ее хранения вышел";
     } else if (response.ok) state.jobs.set(id, await response.json());
-  } catch {
-    // Сервис недоступен: следующий опрос повторит запрос
-    state.failedPolls += 1;
+    return true;
+  } catch (error) {
+    // fetch при обрыве бросает TypeError, а 401 из api - ответ работающего сервиса
+    return !(error instanceof TypeError);
   }
 }
 
@@ -274,7 +276,9 @@ async function poll() {
     const ids = [...state.jobs]
       .filter(([id, job]) => everything || id === state.current || !job || ACTIVE.has(job.status))
       .map(([id]) => id);
-    await Promise.all(ids.map(refresh));
+    const reached = await Promise.all(ids.map(refresh));
+    if (reached.includes(false)) state.failedPolls += 1;
+    else if (reached.length || !state.jobs.size) state.failedPolls = 0;
     renderBanner();
     renderList();
     if (state.current) await renderJob();
@@ -347,7 +351,7 @@ async function renderJob() {
   const details = [megabytes(job.size)];
   if (job.duration !== null) details.push(length(job.duration));
   if (job.channels !== null) details.push(`каналов ${job.channels}`);
-  if (job.diarize && !job.warning) details.push(job.speakers ? `говорящих ${job.speakers}` : "разделение говорящих");
+  if (job.diarize) details.push(job.speakers ? `говорящих ${job.speakers}` : "разделение говорящих");
   details.push(`загружена ${new Date(job.created).toLocaleString("ru-RU")}`);
   $("details").textContent = details.join(" · ");
   const status = $("status");

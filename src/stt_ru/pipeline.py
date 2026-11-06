@@ -31,11 +31,14 @@ SAME_CHANNEL_RATIO = 1e-3
 SAME_CHANNEL_LAG = 0.01
 LAG_FRAME = 1 << 14
 LAG_FRAMES = 16
-# Настоящая стереозапись одного источника: волна разная, а громкость меняется одинаково.
-# На подкастах корреляция от 0.98, на звонке с говорящими по каналам она около нуля
+# Настоящая стереозапись одного источника: волна разная, а уровень меняется одинаково.
+# На таких записях корреляция от 0.97, на звонке с гудком, музыкой и утечкой до 0.93
 SAME_ENVELOPE = 0.95
 ENVELOPE_FRAME = 0.1
+ENVELOPE_FLOOR_DB = 30.0
 ENVELOPE_MIN_FRAMES = 50
+# Каналы в противофазе при сведении гасят друг друга
+MIX_LOSS = 0.25
 # Канал тише громкого на 50 дБ по энергии: цифровая тишина или шум без речи
 SILENT_CHANNEL = 1e-5
 # Первая задача с разделением ждет модели не дольше этого; скачивание идет дальше в фоне
@@ -210,6 +213,7 @@ class Transcriber:
         diarize: bool | None = None,
         speakers: int | None = None,
         should_stop: Callable[[], bool] | None = None,
+        on_warning: Callable[[str], None] | None = None,
     ) -> Transcript:
         """
         Распознавание записи в памяти
@@ -220,6 +224,8 @@ class Transcriber:
             diarize (bool): Разделять говорящих (см. speaker_options)
             speakers (int): Точное число говорящих (см. speaker_options)
             should_stop (Callable): Вызывается между шагами; True прерывает работу
+            on_warning (Callable): Получает текст предупреждения о числе говорящих; None -
+                warnings.warn
 
         Вывод:
             Transcript: Фрагменты речи по времени начала; фрагменты без текста отбрасываются
@@ -265,6 +271,7 @@ class Transcriber:
                 count,
                 speech=[(begin, finish) for begin, finish, _, _ in fragments],
                 should_stop=should_stop,
+                on_warning=on_warning,
             )
             segments = _renumbered(_by_speaker(fragments, Timeline(turns)))
         segments.sort(key=lambda segment: (segment.start, segment.channel or 0))
@@ -356,7 +363,9 @@ class Transcriber:
             else:
                 channel_map.append(match)
         if len(tracks) == 1:
-            return [(None, audio.mono() if mixed else tracks[0][1])], single
+            kept = tracks[0][1]
+            mono = audio.mono() if mixed else kept
+            return [(None, mono if _energy(mono) >= MIX_LOSS * _energy(kept) else kept)], single
         return tracks, tuple(channel_map)
 
 
@@ -416,7 +425,9 @@ def _envelope(samples: Samples, frame: int) -> np.ndarray:
     for index in range(count):
         part = samples[index * frame : (index + 1) * frame].astype(np.float64)
         levels[index] = np.sqrt(np.dot(part, part) / frame)
-    return levels
+    # В дБ: иначе короткий громкий гудок в обоих каналах перевешивает всю речь
+    loud = max(float(np.percentile(levels, 95)), 1e-12)
+    return (20 * np.log10(np.maximum(levels, 1e-12) / loud)).clip(-ENVELOPE_FLOOR_DB)
 
 
 def same_envelope(first: Samples, second: Samples, frame: int) -> bool:
@@ -424,10 +435,10 @@ def same_envelope(first: Samples, second: Samples, frame: int) -> bool:
     Один ли источник в двух каналах с разной волной
 
     Описание:
-        Каналы одного разговора в стереозаписи отличаются волной (обработка, MP3), но громкость
-        в них меняется одинаково. Источник один, если корреляция громкости по кадрам не ниже
-        SAME_ENVELOPE. На записях короче ENVELOPE_MIN_FRAMES кадров всегда False: случайное
-        совпадение слишком вероятно
+        Каналы одного разговора в стереозаписи отличаются волной (обработка, MP3), но уровень
+        в них меняется одинаково. Источник один, если корреляция уровня в дБ не ниже
+        SAME_ENVELOPE. Считаются только кадры, где слышен хотя бы один канал. Если таких кадров
+        меньше ENVELOPE_MIN_FRAMES, всегда False: случайное совпадение слишком вероятно
 
     Аргументы:
         first (numpy.ndarray): Отсчеты первого канала
@@ -450,7 +461,10 @@ def same_envelope(first: Samples, second: Samples, frame: int) -> bool:
     if len(first) // frame < ENVELOPE_MIN_FRAMES:
         return False
     a, b = _envelope(first, frame), _envelope(second, frame)
-    if np.ptp(a) == 0 or np.ptp(b) == 0:
+    # Общая тишина не говорит об источнике, но подняла бы корреляцию любых двух каналов
+    heard = (a > -ENVELOPE_FLOOR_DB) | (b > -ENVELOPE_FLOOR_DB)
+    a, b = a[heard], b[heard]
+    if len(a) < ENVELOPE_MIN_FRAMES or np.ptp(a) == 0 or np.ptp(b) == 0:
         return False
     return float(np.corrcoef(a, b)[0, 1]) >= SAME_ENVELOPE
 

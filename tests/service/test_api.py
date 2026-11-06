@@ -217,6 +217,26 @@ class TestErrors:
         assert "Нет места для загрузки" in messages[0]
         assert job_folders(jobs) == []
 
+    def test_space_for_both_copies_required(self, client, jobs, monkeypatch):
+        # Тело лежит на диске дважды: во временном файле и в каталоге задачи
+        content = wav_bytes()
+        free = SimpleNamespace(free=int(1.5 * len(content)))
+        monkeypatch.setattr(api.shutil, "disk_usage", lambda path: free)
+        assert upload(client, content=content).status_code == 507
+
+    def test_no_space_while_copying(self, client, jobs, monkeypatch):
+        messages = []
+        jobs.errors = messages.append
+
+        def full(*args, **kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(jobs, "submit", full)
+        response = upload(client)
+        assert response.status_code == 507
+        assert response.json() == {"detail": "На сервере не хватает места"}
+        assert "No space left" in messages[0]
+
     def test_write_error_logged(self, jobs):
         messages = []
         jobs.errors = messages.append

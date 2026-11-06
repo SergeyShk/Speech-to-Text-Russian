@@ -306,6 +306,7 @@ def test_stereo_warning(jobs, transcriber):
     job = jobs.submit("call.wav", io.BytesIO(wav_bytes()), diarize=True)
     done = wait(jobs, job.id)
     assert done.warning.startswith("Разделение говорящих не выполнялось")
+    assert done.diarize is False
     assert wait(jobs, submit(jobs).id).warning is None
 
 
@@ -320,6 +321,34 @@ def test_load_of_models_logged(transcriber, tmp_path):
     finally:
         jobs.close()
     assert f"[{job.id}] Загрузка моделей разделения говорящих" in messages
+
+
+def test_object_without_diarizer_attribute(transcriber, tmp_path):
+    class Own:
+        speaker_options = transcriber.speaker_options
+        load = transcriber.load
+        transcribe_audio = transcriber.transcribe_audio
+
+    mono = io.BytesIO()
+    sf.write(mono, np.zeros(8000, dtype=np.float32), 8000, format="WAV")
+    jobs = JobQueue(Own(), tmp_path)
+    try:
+        job = jobs.submit("one.wav", io.BytesIO(mono.getvalue()), diarize=True)
+        assert wait(jobs, job.id).status == "done"
+    finally:
+        jobs.close()
+
+
+def test_speakers_warning_reaches_job(transcriber, tmp_path):
+    transcriber.warning = "Указано говорящих 50, а по записи их около 3"
+    messages = []
+    jobs = JobQueue(transcriber, tmp_path, log=messages.append)
+    try:
+        job = submit(jobs)
+        assert wait(jobs, job.id).warning.startswith("Указано говорящих 50")
+    finally:
+        jobs.close()
+    assert any("предупреждение - Указано говорящих 50" in message for message in messages)
 
 
 def test_model_error_hides_path_from_client(transcriber, tmp_path, monkeypatch):
