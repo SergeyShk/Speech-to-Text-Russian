@@ -50,6 +50,7 @@ from .vad import VadOptions
 
 INTERRUPTED = 130
 TOKEN_VARIABLE = "STT_RU_TOKEN"
+MAX_KEEP_HOURS = 87600
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 DEVICES: dict[str, list[str] | None] = {
     "auto": None,
@@ -387,6 +388,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="replace")
     warnings.showwarning = _show_warning
+    # Иначе Python покажет предупреждение с тем же текстом только для первого файла
+    warnings.simplefilter("always", UserWarning)
     parser = build_parser()
     args, extra = parser.parse_known_args(argv)
     # Пути после параметров: stt-ru transcribe a.wav -o out b.wav
@@ -397,6 +400,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command is None:
         parser.print_help(sys.stderr)
         sys.exit(2)
+    # До импорта huggingface_hub. В сервисе stderr может быть закрыт, а полоса загрузки на закрытом
+    # stderr роняет скачивание моделей
+    if args.command == "serve" or args.quiet:
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    if args.quiet:
+        os.environ.setdefault("HF_HUB_VERBOSITY", "error")
     command = {"transcribe": transcribe, "evaluate": evaluate, "serve": serve}[args.command]
     try:
         command(parser.commands[args.command], args)
@@ -711,6 +720,13 @@ def serve(parser: ArgumentParser, args: argparse.Namespace) -> None:
         ):
             if not (math.isfinite(value) and value > 0):
                 parser.error(f"{option} должен быть положительным числом: {value:g}")
+        # Значения дальше переводятся в секунды и байты, а срок хранения - в дату
+        if args.keep > MAX_KEEP_HOURS:
+            parser.error(f"--keep не больше {MAX_KEEP_HOURS} часов: {args.keep:g}")
+        if not math.isfinite(args.max_duration * 60):
+            parser.error(f"--max-duration слишком большое: {args.max_duration:g}")
+        if args.max_size * (1 << 20) < 1:
+            parser.error(f"--max-size меньше одного байта: {args.max_size:g}")
         if args.data_dir is not None:
             if not args.data_dir or not Path(args.data_dir).is_dir():
                 parser.error(f"каталога нет: {args.data_dir}")

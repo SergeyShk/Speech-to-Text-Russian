@@ -2,10 +2,13 @@ import io
 import os
 import sys
 import threading
+import time
 
+import numpy as np
 import pytest
+import soundfile as sf
 
-from stt_ru.exceptions import ModelError, ParameterError
+from stt_ru.exceptions import ModelError, ParameterError, StoppedError
 from stt_ru.service import JobQueue, QueueFullError, worker
 
 from .conftest import job_folders, wait, wav_bytes
@@ -247,8 +250,8 @@ class TestSpeakers:
     @pytest.mark.parametrize(
         ("options", "message"),
         [
-            ({"speakers": 0}, "Число говорящих должно быть от 1 до 100"),
-            ({"speakers": 10**12}, "Число говорящих должно быть от 1 до 100"),
+            ({"speakers": 0}, "Число говорящих должно быть целым от 1 до 100"),
+            ({"speakers": 10**12}, "Число говорящих должно быть целым от 1 до 100"),
             ({"diarize": False, "speakers": 2}, "разделение говорящих выключено"),
         ],
     )
@@ -259,8 +262,68 @@ class TestSpeakers:
         assert not jobs.full()
 
 
+class TestRunningJobStopped:
+    def test_deleted_job_stops(self, transcriber, tmp_path):
+        started = threading.Event()
+
+        def running(audio, source=None, *, should_stop=None, **options):
+            started.set()
+            while not should_stop():
+                time.sleep(0.01)
+            raise StoppedError("Распознавание остановлено")
+
+        transcriber.transcribe_audio = running
+        messages, errors = [], []
+        jobs = JobQueue(transcriber, tmp_path, log=messages.append, errors=errors.append)
+        try:
+            job = submit(jobs)
+            assert started.wait(5)
+            assert jobs.delete(job.id)
+            for _ in range(500):
+                if not job.path.parent.exists():
+                    break
+                time.sleep(0.01)
+            assert not job.path.parent.exists()
+            next_job = wait(jobs, submit(jobs, "next.wav").id, ("running", "failed"))
+            assert next_job is not None
+        finally:
+            transcriber.transcribe_audio = lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError
+            )
+            jobs.close()
+        assert errors == []
+
+    def test_should_stop_follows_delete(self, jobs, transcriber):
+        job = wait(jobs, submit(jobs).id)
+        assert transcriber.stops[0]() is False
+        job_in_queue = jobs.get(job.id)
+        assert job_in_queue is not None
+        assert jobs.delete(job.id)
+        assert transcriber.stops[0]() is True
+
+
+def test_stereo_warning(jobs, transcriber):
+    job = jobs.submit("call.wav", io.BytesIO(wav_bytes()), diarize=True)
+    done = wait(jobs, job.id)
+    assert done.warning.startswith("Разделение говорящих не выполнялось")
+    assert wait(jobs, submit(jobs).id).warning is None
+
+
+def test_load_of_models_logged(transcriber, tmp_path):
+    messages = []
+    jobs = JobQueue(transcriber, tmp_path, log=messages.append)
+    try:
+        mono = io.BytesIO()
+        sf.write(mono, np.zeros(8000, dtype=np.float32), 8000, format="WAV")
+        job = jobs.submit("one.wav", io.BytesIO(mono.getvalue()), diarize=True)
+        wait(jobs, job.id)
+    finally:
+        jobs.close()
+    assert f"[{job.id}] Загрузка моделей разделения говорящих" in messages
+
+
 def test_model_error_hides_path_from_client(transcriber, tmp_path, monkeypatch):
-    def broken(audio, source=None, *, diarize=None, speakers=None):
+    def broken(audio, source=None, **options):
         raise ModelError("Не удалось загрузить модели диаризации: /home/user/.cache/hub")
 
     monkeypatch.setattr(transcriber, "transcribe_audio", broken)
@@ -270,7 +333,8 @@ def test_model_error_hides_path_from_client(transcriber, tmp_path, monkeypatch):
         failed = wait(jobs, submit(jobs).id)
     finally:
         jobs.close()
-    assert failed.error == "Не удалось загрузить модели"
+    assert failed.error.startswith("Не удалось загрузить модели разделения говорящих;")
+    assert "/home" not in failed.error
     assert "/home/user/.cache/hub" in errors[0]
 
 

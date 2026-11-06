@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from urllib.parse import quote
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import stt_ru
@@ -178,6 +179,76 @@ class TestJobs:
         assert client.post("/v1/transcriptions", data={"name": "x"}).status_code == 422
 
 
+class TestErrors:
+    def test_framework_errors_in_russian(self, client):
+        assert client.get("/v1/missing").json() == {"detail": "Не найдено"}
+        assert client.put("/v1/info").json() == {"detail": "Метод не поддерживается"}
+
+    def test_broken_upload_in_russian(self, client):
+        response = client.post(
+            "/v1/transcriptions",
+            content=b"not multipart",
+            headers={"Content-Type": "multipart/form-data"},
+        )
+        assert response.status_code == 400
+        assert response.json() == {"detail": "Не удалось разобрать запрос"}
+
+    def test_own_errors_kept(self, client):
+        assert client.get("/v1/jobs/missing").json()["detail"].startswith("Задачи нет")
+
+    def test_too_many_fields(self, client, jobs):
+        data = {f"field{index}": "1" for index in range(50)}
+        response = upload(client, data=data)
+        assert response.status_code == 400
+        assert response.json() == {"detail": "Не удалось разобрать запрос"}
+        assert job_folders(jobs) == []
+
+    def test_too_big_field(self, client):
+        response = upload(client, data={"speakers": "1" * (2 << 16)})
+        assert response.status_code == 400
+
+    def test_no_disk_space(self, client, jobs, monkeypatch):
+        messages = []
+        jobs.errors = messages.append
+        monkeypatch.setattr(api.shutil, "disk_usage", lambda path: SimpleNamespace(free=10))
+        response = upload(client)
+        assert response.status_code == 507
+        assert response.json() == {"detail": "На сервере не хватает места"}
+        assert "Нет места для загрузки" in messages[0]
+        assert job_folders(jobs) == []
+
+    def test_write_error_logged(self, jobs):
+        messages = []
+        jobs.errors = messages.append
+        app = create_app(jobs)
+
+        @app.get("/broken")
+        def broken():
+            raise HTTPException(400, "There was an error parsing the body") from OSError(
+                28, "ENOSPC"
+            )
+
+        with TestClient(app) as client:
+            response = client.get("/broken")
+        assert response.status_code == 507
+        assert "ENOSPC" in messages[0]
+
+    def test_openapi_describes_token(self, client):
+        schema = client.get("/openapi.json").json()
+        assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+        post = schema["paths"]["/v1/transcriptions"]["post"]
+        assert post["security"] == [{"HTTPBearer": []}]
+        assert {"400", "401", "413", "422", "503", "507"} <= set(post["responses"])
+        assert "content" not in post["responses"]["422"]
+        result = schema["paths"]["/v1/jobs/{job_id}/result"]["get"]["responses"]
+        assert {"400", "401", "404", "409", "422"} <= set(result)
+
+    def test_warning_in_job(self, client, jobs):
+        job = upload(client, data={"diarize": "true"}).json()
+        wait(jobs, job["id"])
+        assert client.get(f"/v1/jobs/{job['id']}").json()["warning"].startswith("Разделение")
+
+
 class TestSpeakers:
     def test_default(self, client, transcriber):
         job = upload(client).json()
@@ -207,12 +278,12 @@ class TestSpeakers:
     @pytest.mark.parametrize(
         ("field", "value", "message"),
         [
-            ("speakers", "0", "Число говорящих должно быть от 1 до 100: 0"),
-            ("speakers", "-1", "Число говорящих должно быть от 1 до 100: -1"),
+            ("speakers", "0", "Число говорящих должно быть целым от 1 до 100: 0"),
+            ("speakers", "-1", "Число говорящих должно быть целым от 1 до 100: -1"),
             (
                 "speakers",
                 "1000000000000",
-                "Число говорящих должно быть от 1 до 100: 1000000000000",
+                "Число говорящих должно быть целым от 1 до 100: 1000000000000",
             ),
             ("speakers", "два", "Неверное значение поля speakers"),
             ("speakers", "1.5", "Неверное значение поля speakers"),

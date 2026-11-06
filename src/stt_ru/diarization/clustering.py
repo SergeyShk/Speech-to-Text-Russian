@@ -185,6 +185,8 @@ def _absorb_small(
     totals = np.bincount(inverse, weights=weights)
     if speakers is None:
         kept = uniques[totals >= MIN_SHARE * totals.sum()]
+        if len(kept) == 0:
+            kept = uniques[[totals.argmax()]]
     else:
         kept = uniques[np.argsort(-totals, kind="stable")[:speakers]]
     if len(kept) == len(uniques):

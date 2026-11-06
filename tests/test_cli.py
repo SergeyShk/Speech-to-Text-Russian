@@ -1095,7 +1095,9 @@ class TestSpeakers:
         with pytest.raises(SystemExit) as caught:
             main([command, *paths, "--speakers", speakers])
         assert caught.value.code == 2
-        assert f"Число говорящих должно быть от 1 до 100: {speakers}" in capsys.readouterr().err
+        assert (
+            f"Число говорящих должно быть целым от 1 до 100: {speakers}" in capsys.readouterr().err
+        )
         assert fake == []
 
     def test_help_differs_for_service(self, capsys):
@@ -1107,3 +1109,55 @@ class TestSpeakers:
         with pytest.raises(SystemExit):
             main(["evaluate", "eval.csv", "--diarize"])
         assert "--diarize" in capsys.readouterr().err
+
+
+class TestServeLimits:
+    @pytest.mark.parametrize(
+        ("options", "message"),
+        [
+            (["--keep", "1e12"], "--keep не больше 87600 часов"),
+            (["--max-duration", "1e308"], "--max-duration слишком большое"),
+            (["--max-size", "0.0000001"], "--max-size меньше одного байта"),
+        ],
+    )
+    def test_refused_before_model(self, fake, capsys, options, message):
+        with pytest.raises(SystemExit) as caught:
+            main(["serve", *options])
+        assert caught.value.code == 2
+        assert message in capsys.readouterr().err
+        assert fake == []
+
+
+class TestQuietDownloads:
+    @pytest.fixture(autouse=True)
+    def clean(self, monkeypatch):
+        monkeypatch.delenv("HF_HUB_DISABLE_PROGRESS_BARS", raising=False)
+        monkeypatch.delenv("HF_HUB_VERBOSITY", raising=False)
+        yield
+        os.environ.pop("HF_HUB_DISABLE_PROGRESS_BARS", None)
+        os.environ.pop("HF_HUB_VERBOSITY", None)
+
+    def test_quiet(self, fake, files):
+        main(["transcribe", str(files), "-q"])
+        assert os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
+        assert os.environ["HF_HUB_VERBOSITY"] == "error"
+
+    def test_shown_by_default(self, fake, files):
+        main(["transcribe", str(files)])
+        assert "HF_HUB_DISABLE_PROGRESS_BARS" not in os.environ
+
+    def test_service_never_draws(self, fake, monkeypatch):
+        monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: None)
+        monkeypatch.setattr(cli, "_bind_error", lambda host, port: None)
+        main(["serve"])
+        assert os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
+
+
+def test_warning_shown_for_every_file(fake, files, tmp_path, capsys, monkeypatch):
+    def warned(self, path, **options):
+        warnings.warn("каналы разные", stacklevel=2)
+        return Transcript((), 1.0, 2, "fake", Path(path).name)
+
+    monkeypatch.setattr(FakeTranscriber, "transcribe", warned)
+    main(["transcribe", str(files), "-f", "txt", "-o", str(tmp_path / "out")])
+    assert capsys.readouterr().err.count("каналы разные") == 2

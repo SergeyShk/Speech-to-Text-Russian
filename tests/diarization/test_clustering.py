@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from stt_ru.diarization import cluster, clustering
+from stt_ru.exceptions import ParameterError
 
 
 def around(angle, count, spread=0.02, seed=0):
@@ -96,3 +97,61 @@ def test_stable():
 @pytest.mark.parametrize("count", [0, 1])
 def test_few_vectors(count):
     assert cluster(np.ones((count, 2)) / np.sqrt(2)).tolist() == [0] * count
+
+
+def test_loud_cluster_without_speech_does_not_take_place():
+    # Музыка: много времени, но почти нет распознанной речи; вес считается только по речи
+    vectors = np.concatenate([groups(10, 10), around(3.0, 30, seed=9)])
+    weights = np.array([100.0] * 10 + [100.0] * 10 + [0.0] * 30)
+    labels = cluster(vectors, speakers=2, weights=weights)
+    assert len(set(labels[:10].tolist())) == 1
+    assert len(set(labels[10:20].tolist())) == 1
+    assert labels[0] != labels[10]
+
+
+def test_stuck_voices_separated_when_refined():
+    # При пороге почти все слиплось, а от второго человека отделился только маленький кусок
+    first, second = around(0.0, 40, spread=0.05, seed=1), around(1.0, 40, spread=0.05, seed=2)
+    vectors = np.concatenate([first, second])
+    stuck = np.array([0] * 40 + [0] * 35 + [1] * 5)
+    labels = clustering._refined(vectors, stuck, np.ones(80))
+    assert labels.tolist() == [0] * 40 + [1] * 40
+
+
+def test_refining_limited(monkeypatch):
+    monkeypatch.setattr(clustering, "LLOYD_STEPS", 1)
+    first, second = around(0.0, 40, spread=0.05, seed=1), around(1.0, 40, spread=0.05, seed=2)
+    stuck = np.array([0] * 40 + [0] * 35 + [1] * 5)
+    labels = clustering._refined(np.concatenate([first, second]), stuck, np.ones(80))
+    assert labels[:5].tolist() == [0] * 5
+
+
+def test_refining_keeps_stable_split():
+    vectors = groups(10, 10)
+    labels = np.array([0] * 10 + [1] * 10)
+    assert clustering._refined(vectors, labels, np.ones(20)).tolist() == labels.tolist()
+
+
+def test_zero_weights_are_equal():
+    assert cluster(groups(5, 7), weights=np.zeros(12)).tolist() == [0] * 5 + [1] * 7
+
+
+def test_too_many_speakers_warned():
+    with pytest.warns(UserWarning, match="Указано говорящих 8, а по записи их около 2"):
+        cluster(groups(10, 10), speakers=8)
+
+
+@pytest.mark.parametrize("speakers", [2, 5])
+def test_near_number_not_warned(speakers, recwarn):
+    cluster(groups(10, 10), speakers=speakers)
+    assert not recwarn.list
+
+
+@pytest.mark.parametrize("speakers", [0, -1, 101, 2.5, 2.0, True, "2", [2]])
+def test_wrong_number(speakers):
+    with pytest.raises(ParameterError, match="Число говорящих должно быть целым от 1 до 100"):
+        cluster(groups(3, 3), speakers=speakers)
+
+
+def test_numpy_integer_is_fine():
+    assert len(set(cluster(groups(3, 3), speakers=np.int64(2)).tolist())) == 2

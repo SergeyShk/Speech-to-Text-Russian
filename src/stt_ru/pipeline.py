@@ -450,7 +450,7 @@ def same_envelope(first: Samples, second: Samples, frame: int) -> bool:
     if len(first) // frame < ENVELOPE_MIN_FRAMES:
         return False
     a, b = _envelope(first, frame), _envelope(second, frame)
-    if a.std() == 0 or b.std() == 0:
+    if np.ptp(a) == 0 or np.ptp(b) == 0:
         return False
     return float(np.corrcoef(a, b)[0, 1]) >= SAME_ENVELOPE
 

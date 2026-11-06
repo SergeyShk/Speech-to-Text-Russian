@@ -13,6 +13,10 @@
   --speaker-1: #d9822b;
   --speaker-2: #2f9e6e;
   --speaker-3: #9b51c9;
+  --speaker-4: #c9406a;
+  --speaker-5: #0f8fa8;
+  --speaker-6: #8a7a1f;
+  --speaker-7: #5a6acf;
   --radius: 10px;
 }
 
@@ -31,6 +35,10 @@
     --speaker-1: #f0a85a;
     --speaker-2: #5cc99b;
     --speaker-3: #c48bf0;
+    --speaker-4: #f07a9c;
+    --speaker-5: #4fc3d9;
+    --speaker-6: #d0bd55;
+    --speaker-7: #98a4f2;
   }
 }
 
@@ -130,6 +138,7 @@ input[type="password"] {
 }
 
 .drop {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -142,7 +151,9 @@ input[type="password"] {
   transition: border-color 0.15s, background 0.15s;
 }
 .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-.drop input { display: none; }
+/* Скрыто только с виду: файл можно выбрать и с клавиатуры */
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.drop:focus-within { border-color: var(--accent); }
 
 .progress {
   height: 6px;
@@ -201,11 +212,24 @@ th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--lin
 th { position: sticky; top: 0; background: var(--card); font-weight: 600; font-size: 13px; color: var(--muted); }
 td.time { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
 td.speaker { white-space: nowrap; font-weight: 600; }
+.speaker-0 { color: var(--speaker-0); }
+.speaker-1 { color: var(--speaker-1); }
+.speaker-2 { color: var(--speaker-2); }
+.speaker-3 { color: var(--speaker-3); }
+.speaker-4 { color: var(--speaker-4); }
+.speaker-5 { color: var(--speaker-5); }
+.speaker-6 { color: var(--speaker-6); }
+.speaker-7 { color: var(--speaker-7); }
+#title { overflow-wrap: anywhere; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--accent-soft); }
 tbody tr.playing { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
 
 @media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; padding: 16px; }
+  .layout { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  /* На телефоне тексту нужна вся ширина: конец фрагмента важен меньше всего */
+  th:nth-child(2), td:nth-child(2) { display: none; }
+  th, td { padding: 6px; }
+  td.speaker { white-space: normal; }
   .top { padding: 12px 16px; }
 }

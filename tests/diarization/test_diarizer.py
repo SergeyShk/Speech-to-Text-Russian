@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from stt_ru.diarization import Diarizer, diarizer
-from stt_ru.exceptions import AudioError, ModelError, ParameterError
+from stt_ru.exceptions import AudioError, ModelError, ParameterError, StoppedError
 
 RATE = 16000
 
@@ -62,6 +62,7 @@ def embedder(monkeypatch):
 
     monkeypatch.setattr(diarizer, "Manager", FakeManager)
     monkeypatch.setattr(diarizer, "create_vad_resolver", lambda model: FakeResolver())
+    monkeypatch.setattr(diarizer, "create_se_resolver", lambda model: FakeResolver())
     monkeypatch.setattr(diarizer.rt, "InferenceSession", lambda *args, **kwargs: FakeSession())
     return fake
 
@@ -94,7 +95,7 @@ def test_exact_speakers(embedder):
 
 @pytest.mark.parametrize("speakers", [0, -1, 101])
 def test_wrong_speakers(embedder, speakers):
-    with pytest.raises(ParameterError, match="Число говорящих должно быть от 1 до 100"):
+    with pytest.raises(ParameterError, match="Число говорящих должно быть целым от 1 до 100"):
         Diarizer().diarize(signal((0.5, 1)), RATE, speakers=speakers)
 
 
@@ -225,10 +226,53 @@ def test_providers_passed(monkeypatch, embedder):
     assert seen["providers"] == ["CPUExecutionProvider"]
 
 
+class TestSpeech:
+    def test_weight_only_from_speech(self, embedder, monkeypatch):
+        seen = {}
+
+        def spy(vectors, threshold, speakers, weights):
+            seen["weights"] = weights.tolist()
+            return np.zeros(len(vectors), dtype=np.int64)
+
+        monkeypatch.setattr(diarizer, "cluster", spy)
+        samples = signal((0.5, 4), (0, 2), (0.25, 4))
+        Diarizer().diarize(samples, RATE)
+        assert min(seen["weights"]) > 0
+        Diarizer().diarize(samples, RATE, speech=[(0.0, 4.0)])
+        assert seen["weights"][1] == 0
+        assert seen["weights"][0] > 3 * RATE
+        Diarizer().diarize(samples, RATE, speech=[])
+        assert set(seen["weights"]) == {0}
+
+    def test_speech_outside_recording(self, embedder):
+        assert Diarizer().diarize(signal((0.5, 2)), RATE, speech=[(100.0, 200.0)])
+
+
+class TestStop:
+    def test_during_segmentation(self, embedder):
+        with pytest.raises(StoppedError):
+            Diarizer().diarize(signal((0.5, 2)), RATE, should_stop=lambda: True)
+        assert embedder.lengths == []
+
+    def test_during_embeddings(self, embedder):
+        calls = []
+
+        def later():
+            calls.append(1)
+            return len(calls) > 1
+
+        with pytest.raises(StoppedError):
+            Diarizer().diarize(signal((0.5, 2)), RATE, should_stop=later)
+        assert embedder.lengths == []
+
+    def test_not_stopped(self, embedder):
+        assert Diarizer().diarize(signal((0.5, 2)), RATE, should_stop=lambda: False)
+
+
 def test_load_failure(monkeypatch):
     def broken(*args, **kwargs):
         raise OSError("нет сети")
 
-    monkeypatch.setattr(diarizer, "Manager", broken)
+    monkeypatch.setattr(diarizer, "create_se_resolver", broken)
     with pytest.raises(ModelError, match="Не удалось загрузить модели диаризации: нет сети"):
         Diarizer()
