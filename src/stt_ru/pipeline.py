@@ -32,10 +32,10 @@ SAME_CHANNEL_LAG = 0.01
 LAG_FRAME = 1 << 14
 LAG_FRAMES = 16
 # Настоящая стереозапись одного источника: волна разная, а уровень меняется одинаково.
-# На таких записях корреляция от 0.97, на звонке с гудком, музыкой и утечкой до 0.93
+# На таких записях корреляция от 0.97, на звонке с гудком, музыкой и утечкой обычно до 0.93
 SAME_ENVELOPE = 0.95
 ENVELOPE_FRAME = 0.1
-ENVELOPE_FLOOR_DB = 30.0
+ENVELOPE_FLOOR_DB = 40.0
 ENVELOPE_MIN_FRAMES = 50
 # Каналы в противофазе при сведении гасят друг друга
 MIX_LOSS = 0.25
@@ -426,7 +426,9 @@ def _envelope(samples: Samples, frame: int) -> np.ndarray:
         part = samples[index * frame : (index + 1) * frame].astype(np.float64)
         levels[index] = np.sqrt(np.dot(part, part) / frame)
     # В дБ: иначе короткий громкий гудок в обоих каналах перевешивает всю речь
-    loud = max(float(np.percentile(levels, 95)), 1e-12)
+    # Только слышимые кадры: если тишина занимает почти всю запись, опорой станет она
+    audible = levels[levels >= levels.max() * 1e-3]
+    loud = max(float(np.percentile(audible, 95)), 1e-12)
     return (20 * np.log10(np.maximum(levels, 1e-12) / loud)).clip(-ENVELOPE_FLOOR_DB)
 
 

@@ -658,6 +658,31 @@ class TestOneSource:
         samples[:, :] *= np.repeat(np.arange(200) % 8 < 3, 800)[:, None]
         assert Transcriber().transcribe_audio(Audio(samples, 8000)).channels == 2
 
+    def test_loud_common_music_keeps_speakers(self):
+        # Узкий диапазон уровней прижал бы тихий разговор к границе, и все решила бы музыка
+        speech = self.source(seconds=16.0)
+        speech[:64000, 1] = 0
+        speech[64000:, 0] = 0
+        rng = np.random.default_rng(5)
+        level = np.repeat(rng.uniform(0.3, 1, 300), 800)
+        music = rng.normal(0, 1, (len(level), 2)) * level[:, None]
+        samples = np.concatenate([music, speech * 0.8], dtype=np.float32)
+        assert not same_envelope(samples[:, 0], samples[:, 1], 800)
+
+    def test_long_silence_keeps_speakers(self):
+        # Шум линии в обоих каналах и тишина почти на всю запись: опорой уровня остается разговор
+        rng = np.random.default_rng(6)
+        speech = self.source(seconds=16.0)
+        speech[:64000, 1] = 0
+        speech[64000:, 0] = 0
+        speech += rng.normal(0, 1e-3, speech.shape)
+        samples = np.concatenate([np.zeros((400 * 8000, 2)), speech], dtype=np.float32)
+        assert not same_envelope(samples[:, 0], samples[:, 1], 800)
+
+    def test_long_silence_keeps_one_source(self):
+        samples = np.concatenate([np.zeros((400 * 8000, 2)), self.source()], dtype=np.float32)
+        assert same_envelope(samples[:, 0], samples[:, 1], 800)
+
     def test_on_warning_reaches_diarizer(self, diarizing):
         seen = []
         Transcriber(diarize=True).transcribe_audio(mono(), on_warning=seen.append)
